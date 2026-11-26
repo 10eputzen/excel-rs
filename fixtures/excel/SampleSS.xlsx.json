@@ -1,0 +1,21 @@
+{
+  "sheetNames": ["First Sheet","Sheet Number 2","Sheet3"],
+  "sheets": {
+    "First Sheet": [
+      ["Test spreadsheet",null],
+      ["2nd row","2nd row 2nd column"],
+      [null,null],
+      ["This one is red",null]
+    ],
+    "Sheet Number 2": [
+      ["Start of 2nd sheet",null,null,null],
+      ["Sheet 2 row 2",null,null,null],
+      [null,null,null,null],
+      ["I'm in bold blue, on a yellow background",null,null,null],
+      [null,null,null,null],
+      ["cb=1","cb=10","cb=2","cb=sum"],
+      [1.0,10.0,2.0,13.0]
+    ],
+    "Sheet3": []
+  }
+}

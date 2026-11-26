@@ -14,6 +14,13 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /npm/bench
+    schedule:
+      interval: monthly
+    groups:
+      bench:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -80,6 +80,14 @@ fn read_sheet_inner(bytes: &[u8], opts: &ReadOptions) -> Result<SheetData> {
         None => detect(bytes)?,
     };
     if matches!(format, Format::Xlsx | Format::Xlsb | Format::Ods) {
+        // Must start like a zip archive. calamine would otherwise parse an OLE
+        // container (e.g. a password-protected xlsx) with its own reader, which
+        // follows cyclic sector chains until memory runs out (found by fuzzing).
+        if !bytes.starts_with(b"PK\x03\x04") {
+            return Err(Error::corrupt(
+                "not a zip archive (password-protected files are not supported)",
+            ));
+        }
         check_zip_size(bytes, opts.max_uncompressed_bytes)?;
     }
     match format {

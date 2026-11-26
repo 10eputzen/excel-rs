@@ -25,3 +25,4 @@ rust_xlsxwriter = { workspace = true, features = ["wasm"] }
 rust_xlsxwriter.workspace = true
 zip.workspace = true
 cfb.workspace = true
+proptest.workspace = true

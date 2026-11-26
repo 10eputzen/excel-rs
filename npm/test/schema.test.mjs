@@ -53,6 +53,7 @@ test('row errors carry Excel row numbers, cell and German message', () => {
   const res = readSheet(csv(text), { schema });
   assert.deepEqual(res.rows, [{ name: 'Gut', qty: 1, price: null, due: null, active: null }]);
   assert.equal(res.rowCount, 7);
+  assert.deepEqual(res.rowNumbers, [2]);
   assert.deepEqual(
     res.errors.map((e) => [e.row, e.cell, e.code]),
     [
@@ -179,7 +180,7 @@ test('messages show typed values in German notation', () => {
 
 test('a missing column stops the read even with maxErrors 0', () => {
   const res = readSheet(csv('Name\nA\nB\n'), { schema: { q: { header: 'Menge', required: true } }, maxErrors: 0 });
-  assert.deepEqual(res, { rows: [], errors: [], errorsTruncated: true, rowCount: 0 });
+  assert.deepEqual(res, { rows: [], rowNumbers: [], errors: [], errorsTruncated: true, rowCount: 0 });
 });
 
 test('bounds must fit the column type', () => {
@@ -198,4 +199,13 @@ test('bounds must fit the column type', () => {
 test('a throwing validate aborts with INVALID_INPUT', () => {
   const schema = { a: { header: 'A', validate: () => { throw new Error('boom'); } } };
   assert.throws(() => readSheet(csv('A\n1\n'), { schema }), { code: 'INVALID_INPUT', message: 'schema: a.validate threw: boom' });
+});
+
+test('rowNumbers gives the Excel row of each valid row, skipping empty and invalid rows', () => {
+  const text = 'Name;Menge\nA;1\n;;\nB;x\nC;2\n\nD;3\n';
+  const res = readSheet(csv(text), { schema: { name: schema.name, qty: schema.qty } });
+  assert.deepEqual(res.rows.map((r) => r.name), ['A', 'C', 'D']);
+  assert.deepEqual(res.rowNumbers, [2, 5, 7]);
+  const x = readSheet(xlsx(['Name', 'Menge'], [['A', 1], [null, null], ['B', 2]]), { schema: { name: schema.name, qty: schema.qty } });
+  assert.deepEqual(x.rowNumbers, [2, 4]);
 });
