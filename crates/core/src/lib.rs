@@ -5,6 +5,7 @@
 mod csv_read;
 mod detect;
 mod error;
+mod ole;
 mod prescan;
 mod read;
 mod value;

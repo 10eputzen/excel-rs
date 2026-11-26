@@ -4,9 +4,9 @@
 //! workbook is opened, so a few kilobytes that place a cell far away (xls) or
 //! repeat cells (ods) would allocate gigabytes before the regular limits apply.
 //! These scans compute an upper bound of that allocation from the raw records.
-//! On input they cannot interpret they do nothing and leave the error to calamine.
+//! Both fail closed: input they cannot interpret is rejected as corrupt.
 
-use std::io::{BufReader, Cursor, Read};
+use std::io::{BufReader, Cursor};
 
 use quick_xml::events::{BytesStart, Event};
 
@@ -64,13 +64,8 @@ impl Budget {
 /// rejected as corrupt.
 pub fn check_xls(bytes: &[u8], max_rows: usize, max_cells: usize) -> Result<()> {
     let corrupt = |what: &str| Error::corrupt(format!("xls: {what}"));
-    let mut cfb =
-        cfb::CompoundFile::open(Cursor::new(bytes)).map_err(|_| corrupt("not a compound file"))?;
-    let mut stream = Vec::new();
-    cfb.open_stream("/Workbook")
-        .or_else(|_| cfb.open_stream("/Book"))
-        .and_then(|mut s| s.read_to_end(&mut stream))
-        .map_err(|_| corrupt("no workbook stream"))?;
+    let stream =
+        crate::ole::workbook_stream(bytes).map_err(|_| corrupt("no readable workbook stream"))?;
 
     // Globals: collect the sheet offsets up to the first EOF.
     let mut offsets = Vec::new();
@@ -173,9 +168,13 @@ fn xls_dimensions(d: &[u8]) -> Option<(u64, u64)> {
     };
     let cf = if cf > 0xFF || cl < cf { 0 } else { cf };
     if rl >= 1 && cl >= 1 {
-        Some((rl.saturating_sub(rf), cl.saturating_sub(cf)))
+        // calamine computes `end - start + 1` in u32 with end = last - 1. A start
+        // past the end wraps there, so such a record counts as unbounded.
+        let span =
+            |first: u64, last: u64| (last - 1).checked_sub(first).map_or(u64::MAX, |n| n + 1);
+        Some((span(rf, rl), span(cf, cl)))
     } else {
-        Some((0, 0))
+        Some((1, 1))
     }
 }
 

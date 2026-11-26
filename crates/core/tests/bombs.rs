@@ -89,6 +89,22 @@ fn ods_trailing_empty_repeats_are_fine() {
 /// Minimal BIFF8 workbook: globals with one BoundSheet8 per entry of
 /// `sheets` (all pointing at the same worksheet), then the worksheet records.
 fn xls(sheets: usize, worksheet: &[(u16, Vec<u8>)]) -> Vec<u8> {
+    compound(&[("/Workbook", &xls_stream(sheets, worksheet))])
+}
+
+/// A compound file with the given streams, created in this order.
+fn compound(streams: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut cfb = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+    for (path, data) in streams {
+        if let Some((dir, _)) = path.rsplit_once('/').filter(|(d, _)| !d.is_empty()) {
+            cfb.create_storage_all(dir).unwrap();
+        }
+        cfb.create_stream(path).unwrap().write_all(data).unwrap();
+    }
+    cfb.into_inner().into_inner()
+}
+
+fn xls_stream(sheets: usize, worksheet: &[(u16, Vec<u8>)]) -> Vec<u8> {
     let record = |out: &mut Vec<u8>, typ: u16, data: &[u8]| {
         out.extend_from_slice(&typ.to_le_bytes());
         out.extend_from_slice(&(data.len() as u16).to_le_bytes());
@@ -116,12 +132,7 @@ fn xls(sheets: usize, worksheet: &[(u16, Vec<u8>)]) -> Vec<u8> {
         record(&mut stream, *typ, data);
     }
     record(&mut stream, 0x000A, &[]);
-    let mut cfb = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
-    cfb.create_stream("/Workbook")
-        .unwrap()
-        .write_all(&stream)
-        .unwrap();
-    cfb.into_inner().into_inner()
+    stream
 }
 
 fn number(row: u16, col: u16) -> (u16, Vec<u8>) {
@@ -149,6 +160,51 @@ fn xls_dimensions_record() {
     d.extend_from_slice(&[0, 0]);
     let bytes = xls(1, &[(0x0200, d)]);
     assert_too_large(&bytes, &ReadOptions::default());
+}
+
+#[test]
+fn xls_dimensions_start_after_end() {
+    // First row 10, last row 5: calamine's size computation wraps around.
+    let mut d = 10u32.to_le_bytes().to_vec();
+    d.extend_from_slice(&5u32.to_le_bytes());
+    d.extend_from_slice(&0u16.to_le_bytes());
+    d.extend_from_slice(&1u16.to_le_bytes());
+    d.extend_from_slice(&[0, 0]);
+    let bytes = xls(1, &[(0x0200, d)]);
+    assert_too_large(&bytes, &ReadOptions::default());
+}
+
+#[test]
+fn xls_workbook_stream_chosen_like_calamine() {
+    // calamine takes the first directory entry named Workbook, here the one in a
+    // storage. The prescan must check that stream, not the one at the root.
+    let nested = xls_stream(1, &[number(0, 0), number(0xFFFF, 0xFF)]);
+    let root = xls_stream(1, &[number(0, 0)]);
+    let bytes = compound(&[("/A/Workbook", &nested), ("/Workbook", &root)]);
+    assert_too_large(&bytes, &ReadOptions::default());
+
+    let nested = xls_stream(1, &[number(0, 0), number(3, 0)]);
+    let bytes = compound(&[("/A/Workbook", &nested), ("/Workbook", &root)]);
+    let sheet = read_sheet(&bytes, &ReadOptions::default()).unwrap();
+    assert_eq!(sheet.rows.len(), 4, "calamine read the nested stream");
+}
+
+#[test]
+fn xls_cyclic_directory_chain() {
+    let mut bytes = xls(1, &[number(0, 0)]);
+    let u32_at = |b: &[u8], i: usize| u32::from_le_bytes(b[i..i + 4].try_into().unwrap());
+    let dir_start = u32_at(&bytes, 48);
+    let first_fat = u32_at(&bytes, 76) as usize;
+    let sector = 1usize << u16::from_le_bytes([bytes[30], bytes[31]]);
+    let entry = sector + first_fat * sector + dir_start as usize * 4;
+    assert_eq!(
+        u32_at(&bytes, entry),
+        0xFFFF_FFFE,
+        "end of the directory chain"
+    );
+    bytes[entry..entry + 4].copy_from_slice(&dir_start.to_le_bytes());
+    let err = read_sheet(&bytes, &ReadOptions::default()).unwrap_err();
+    assert_eq!(err.code, ErrorCode::CorruptFile, "{}", err.message);
 }
 
 #[test]
