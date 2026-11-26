@@ -53,7 +53,7 @@ readSheet(bytes, {
 });
 ```
 
-Invalid option values throw `INVALID_INPUT`. For xlsx and xlsb the row and cell limits are enforced while reading, before the result is allocated. For xls and ods the parser allocates the sheet first; the WebAssembly memory is capped at 2 GiB, so a malicious file fails with `CORRUPT_FILE` instead of exhausting the process. After a call that grew the WebAssembly memory beyond 256 MiB, the module is reloaded so that the memory is released.
+Invalid option values throw `INVALID_INPUT`. The row and cell limits are enforced before the result is allocated: while reading for xlsx and xlsb, and by a scan of the raw records for xls and ods (whose parser loads all sheets at once, so there the limit applies to all sheets together). As a last line of defence the WebAssembly memory is capped at 2 GiB. After a call that grew the WebAssembly memory beyond 256 MiB, the module is reloaded so that the memory is released.
 
 ### CSV
 
@@ -116,6 +116,10 @@ import { initExcel } from 'excel-rs/browser';
 await initExcel('/assets/excel_rs_wasm_bg.wasm'); // URL, Response, bytes or WebAssembly.Module
 ```
 
+**Large files.** Parsing runs on the calling thread. For files with more than a few thousand rows, call excel-rs from a Web Worker so the page stays responsive, and set `maxBytes`/`maxRows` to what your app needs.
+
+**Load errors.** If the `.wasm` cannot be fetched or compiled (wrong URL, an SPA fallback serving HTML), calls reject with `WASM_LOAD_FAILED`; the next call retries. `initExcel` with a different source after loading started rejects with `INVALID_INPUT`.
+
 **Content Security Policy.** Instantiating WebAssembly needs `'wasm-unsafe-eval'` in `script-src` (not `'unsafe-eval'`).
 
 ## Errors
@@ -129,6 +133,7 @@ Both functions throw `ExcelError` with a `code` (the browser entry rejects with 
 | `SHEET_NOT_FOUND` | the requested sheet does not exist |
 | `TOO_LARGE` | a size limit was exceeded |
 | `INVALID_INPUT` | invalid options or data for `writeXlsx` |
+| `WASM_LOAD_FAILED` | browser entry only: the WebAssembly file could not be loaded |
 
 ```ts
 import { ExcelError } from 'excel-rs';

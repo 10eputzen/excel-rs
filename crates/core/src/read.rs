@@ -5,6 +5,7 @@ use calamine::{Data, DataRef, Ods, Range, Reader, Xls, Xlsb, Xlsx};
 use crate::csv_read::{read_csv, CsvOptions};
 use crate::detect::{check_zip_size, detect, Format};
 use crate::error::{Error, ErrorCode, Result};
+use crate::prescan::{check_ods, check_xls};
 use crate::value::{civil_to_unix_ms, parse_iso_datetime, Value};
 
 /// Which worksheet to read.
@@ -98,8 +99,14 @@ fn read_sheet_inner(bytes: &[u8], opts: &ReadOptions) -> Result<SheetData> {
         }
         Format::Xlsx => read_xlsx(bytes, opts),
         Format::Xlsb => read_xlsb(bytes, opts),
-        Format::Xls => from_workbook(Xls::new(Cursor::new(bytes)).map_err(Error::corrupt)?, opts),
-        Format::Ods => from_workbook(Ods::new(Cursor::new(bytes)).map_err(Error::corrupt)?, opts),
+        Format::Xls => {
+            check_xls(bytes, opts.max_rows, opts.max_cells)?;
+            from_workbook(Xls::new(Cursor::new(bytes)).map_err(Error::corrupt)?, opts)
+        }
+        Format::Ods => {
+            check_ods(bytes, opts.max_rows, opts.max_cells)?;
+            from_workbook(Ods::new(Cursor::new(bytes)).map_err(Error::corrupt)?, opts)
+        }
     }
 }
 
@@ -158,6 +165,7 @@ fn read_xlsb(bytes: &[u8], opts: &ReadOptions) -> Result<SheetData> {
 /// dense result size before it is allocated.
 struct SparseGrid {
     cells: Vec<(u32, u32, Value)>,
+    seen: usize,
     rows: usize,
     cols: usize,
     max_rows: usize,
@@ -168,6 +176,7 @@ impl SparseGrid {
     fn new(opts: &ReadOptions) -> Self {
         SparseGrid {
             cells: Vec::new(),
+            seen: 0,
             rows: 0,
             cols: 0,
             max_rows: opts.max_rows,
@@ -176,6 +185,15 @@ impl SparseGrid {
     }
 
     fn push(&mut self, (r, c): (u32, u32), value: Value) -> Result<()> {
+        // Every cell record counts, also empty and repeated ones, so a file
+        // that repeats one cell millions of times stops early.
+        self.seen += 1;
+        if self.seen > self.max_cells {
+            return Err(Error::too_large(format!(
+                "more than {} cells",
+                self.max_cells
+            )));
+        }
         if value == Value::Empty {
             return Ok(());
         }
@@ -221,9 +239,8 @@ fn select_sheet(names: &[String], sel: &SheetSelector) -> Result<String> {
     })
 }
 
-/// xls and ods: calamine builds the dense range itself, so a far-away cell is
-/// allocated before these limits apply. In WebAssembly the memory cap turns that
-/// into a trap, which the JavaScript wrapper reports as CORRUPT_FILE.
+/// xls and ods: calamine has already built the dense range; `prescan` bounded
+/// its size before parsing.
 fn range_to_rows(range: &Range<Data>, opts: &ReadOptions) -> Result<Vec<Vec<Value>>> {
     let Some((end_row, end_col)) = range.end() else {
         return Ok(Vec::new());

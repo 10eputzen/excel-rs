@@ -52,6 +52,24 @@ test('reads and writes in Chromium under a strict CSP', async () => {
     assert.deepEqual(result.row, ['Größe Äpfel ß €', 1234.56, '2024-02-29T00:00:00.000Z', true, 2469.12, null]);
     assert.deepEqual(result.roundTrip, [['a'], [1]]);
     assert.equal(result.errorCode, 'CORRUPT_FILE');
+    assert.equal(result.trapCode, 'CORRUPT_FILE');
+    assert.equal(result.afterTrap, 'Ende');
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});
+
+test('a failed load is WASM_LOAD_FAILED and can be retried', async () => {
+  const server = await serve();
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${server.address().port}/?loadfail`);
+    const result = await page.waitForFunction(() => window.__result, null, { timeout: 30_000 }).then((h) => h.jsonValue());
+    assert.equal(result.error, undefined, result.error);
+    assert.equal(result.code, 'WASM_LOAD_FAILED');
+    assert.deepEqual(result.rows, [['a', 'b']]);
   } finally {
     await browser.close();
     server.close();

@@ -6,9 +6,10 @@
 /** A cell value. Dates are `Date` objects in UTC (Excel has no time zones). */
 export type Cell = string | number | boolean | Date | null;
 
-export type InputFormat = 'auto' | 'xlsx' | 'xls' | 'xlsb' | 'ods' | 'csv';
+export type InputFormat = 'auto' | 'xlsx' | 'xlsm' | 'xls' | 'xlsb' | 'ods' | 'csv';
 
 export type ErrorCode =
+  | 'WASM_LOAD_FAILED'
   | 'UNSUPPORTED_FORMAT'
   | 'CORRUPT_FILE'
   | 'SHEET_NOT_FOUND'
@@ -140,6 +141,22 @@ function validateOptions(o: ReadOptions): void {
     if (o[key] !== undefined && !isCount(o[key])) {
       throw new ExcelError('INVALID_INPUT', `${key} must be a non-negative integer`);
     }
+  }
+  oneOf('format', o.format, FORMATS);
+  if (o.csv !== undefined) {
+    if (o.csv === null || typeof o.csv !== 'object') throw new ExcelError('INVALID_INPUT', 'csv must be an object');
+    oneOf('csv.delimiter', o.csv.delimiter, DELIMITERS);
+    oneOf('csv.encoding', o.csv.encoding, ENCODINGS);
+  }
+}
+
+const FORMATS = ['auto', 'xlsx', 'xlsm', 'xls', 'xlsb', 'ods', 'csv'];
+const DELIMITERS = ['auto', ',', ';', '\t', '|'];
+const ENCODINGS = ['auto', 'utf-8', 'windows-1252'];
+
+function oneOf(name: string, value: unknown, allowed: readonly string[]): void {
+  if (value !== undefined && !allowed.includes(value as string)) {
+    throw new ExcelError('INVALID_INPUT', `${name} must be one of ${allowed.map((a) => JSON.stringify(a)).join(', ')}`);
   }
 }
 

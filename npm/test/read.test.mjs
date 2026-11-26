@@ -80,7 +80,10 @@ test('accepts ArrayBuffer and Uint8Array', () => {
 
 test('invalid options are rejected instead of ignored', () => {
   const csv = fixture('utf8-bom.csv');
-  for (const opts of [{ sheet: NaN }, { sheet: -1 }, { sheet: 1.5 }, { maxRows: NaN }, { maxBytes: -1 }, { maxCells: '5' }, null]) {
+  for (const opts of [
+    { sheet: NaN }, { sheet: -1 }, { sheet: 1.5 }, { maxRows: NaN }, { maxBytes: -1 }, { maxCells: '5' }, null,
+    { format: 5 }, { format: 'pdf' }, { csv: 'x' }, { csv: { delimiter: ';;' } }, { csv: { encoding: 8 } },
+  ]) {
     assert.throws(() => readSheet(csv, opts), { code: 'INVALID_INPUT' }, String(JSON.stringify(opts)));
   }
 });
@@ -106,5 +109,5 @@ test('explicit format mismatch is reported, not crashed', () => {
   assert.throws(() => readSheet(fixture('reference-libreoffice.xlsx'), { format: 'xls' }), {
     code: 'CORRUPT_FILE',
   });
-  assert.throws(() => readSheet(Buffer.from('a'), { format: 'pdf' }), { code: 'UNSUPPORTED_FORMAT' });
+  assert.throws(() => readSheet(Buffer.from('a'), { format: 'pdf' }), { code: 'INVALID_INPUT' });
 });

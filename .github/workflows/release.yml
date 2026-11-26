@@ -16,6 +16,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Tag must be on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
       - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           toolchain: stable
@@ -34,8 +37,14 @@ jobs:
         run: npm ci --ignore-scripts
       - working-directory: npm
         run: npm run build
+      - run: cargo test --locked
       - working-directory: npm
         run: npm test
+      - name: Browser test (Chromium)
+        working-directory: npm
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:browser
       - name: Pack
         working-directory: npm
         run: npm pack

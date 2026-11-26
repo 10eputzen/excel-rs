@@ -15,6 +15,10 @@ test('initExcel can be called repeatedly and concurrently', async () => {
   await Promise.all([browser.initExcel(wasmBytes), browser.initExcel(wasmBytes), browser.initExcel()]);
 });
 
+test('initExcel rejects a different source once loaded', async () => {
+  await assert.rejects(browser.initExcel(new Uint8Array([1])), { code: 'INVALID_INPUT' });
+});
+
 test('reads the same rows as the Node.js entry', async () => {
   for (const file of ['reference-libreoffice.xlsx', 'reference-libreoffice.xls', 'reference-libreoffice.ods', 'german-excel.csv']) {
     const res = await browser.readSheet(fixture(file));

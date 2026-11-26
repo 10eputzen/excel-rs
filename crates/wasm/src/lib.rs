@@ -54,7 +54,8 @@ pub fn parse_read_options(json: &str) -> Result<ReadOptions, Error> {
             let i = n
                 .as_u64()
                 .ok_or_else(|| Error::invalid("sheet index must be a non-negative integer"))?;
-            opts.sheet = SheetSelector::Index(i as usize);
+            let i = usize::try_from(i).map_err(|_| Error::invalid("sheet index is too large"))?;
+            opts.sheet = SheetSelector::Index(i);
         }
         Some(_) => return Err(Error::invalid("sheet must be a name or an index")),
     }
