@@ -57,56 +57,168 @@ impl Budget {
 }
 
 /// Bounds the dense grids of all sheets of an xls workbook (BIFF5/8 records).
+///
+/// Mirrors calamine: the globals substream lists each sheet's offset
+/// (BoundSheet8); every listed sheet is parsed from its offset, so an offset
+/// listed twice is charged twice. Fails closed: whatever cannot be read here is
+/// rejected as corrupt.
 pub fn check_xls(bytes: &[u8], max_rows: usize, max_cells: usize) -> Result<()> {
-    let Ok(mut cfb) = cfb::CompoundFile::open(Cursor::new(bytes)) else {
-        return Ok(());
-    };
+    let corrupt = |what: &str| Error::corrupt(format!("xls: {what}"));
+    let mut cfb =
+        cfb::CompoundFile::open(Cursor::new(bytes)).map_err(|_| corrupt("not a compound file"))?;
     let mut stream = Vec::new();
-    let opened = cfb
-        .open_stream("/Workbook")
-        .or_else(|_| cfb.open_stream("/Book"));
-    let Ok(read) = opened.and_then(|mut s| s.read_to_end(&mut stream)) else {
-        return Ok(());
-    };
-    let _ = read;
+    cfb.open_stream("/Workbook")
+        .or_else(|_| cfb.open_stream("/Book"))
+        .and_then(|mut s| s.read_to_end(&mut stream))
+        .map_err(|_| corrupt("no workbook stream"))?;
+
+    // Globals: collect the sheet offsets up to the first EOF.
+    let mut offsets = Vec::new();
+    for record in Records::new(&stream) {
+        let (typ, data) = record.map_err(|_| corrupt("truncated record"))?;
+        match typ {
+            0x0085 if data.len() >= 4 => offsets.push(u32_at(data, 0) as usize),
+            0x0085 => return Err(corrupt("short BoundSheet8 record")),
+            0x000A => break,
+            _ => {}
+        }
+    }
 
     let mut budget = Budget::new(max_rows, max_cells);
+    for offset in offsets {
+        let sheet = stream
+            .get(offset..)
+            .ok_or_else(|| corrupt("sheet offset outside the stream"))?;
+        scan_xls_sheet(sheet, &mut budget).map_err(|e| match e {
+            ScanError::TooLarge(e) => e,
+            ScanError::Corrupt => corrupt("truncated record"),
+        })?;
+    }
+    Ok(())
+}
+
+enum ScanError {
+    TooLarge(Error),
+    Corrupt,
+}
+
+impl From<Error> for ScanError {
+    fn from(e: Error) -> Self {
+        ScanError::TooLarge(e)
+    }
+}
+
+/// One worksheet substream, skipping nested substreams (embedded charts) like calamine.
+fn scan_xls_sheet(sheet: &[u8], budget: &mut Budget) -> std::result::Result<(), ScanError> {
     let (mut cells, mut formulas) = ((0u64, 0u64), (0u64, 0u64));
-    let mut pos = 0usize;
-    while pos + 4 <= stream.len() {
-        let typ = u16_at(&stream, pos);
-        let len = u16_at(&stream, pos + 2) as usize;
-        let Some(data) = stream.get(pos + 4..pos + 4 + len) else {
-            break;
-        };
-        pos += 4 + len;
+    let mut seen_bof = false;
+    let mut depth = 0usize;
+    for record in Records::new(sheet) {
+        let (typ, data) = record.map_err(|_| ScanError::Corrupt)?;
+        if depth > 0 {
+            match typ {
+                0x0809 => depth += 1,
+                0x000A => depth -= 1,
+                _ => {}
+            }
+            continue;
+        }
         match typ {
-            // BOF: a new substream (sheet) starts
-            0x0809 => {
-                budget.add(cells.0, cells.1)?;
-                budget.add(formulas.0, formulas.1)?;
-                cells = (0, 0);
-                formulas = (0, 0);
+            0x0809 if seen_bof => depth += 1,
+            0x0809 => seen_bof = true,
+            0x000A => break,
+            // Dimensions: calamine reserves rows × cols up front
+            0x0200 => {
+                let (rows, cols) = xls_dimensions(data).ok_or(ScanError::Corrupt)?;
+                budget.check(rows, cols)?;
             }
             // Number, Label, RString, BoolErr, Rk, LabelSst
-            0x0203 | 0x0204 | 0x00D6 | 0x0205 | 0x027E | 0x00FD if len >= 4 => {
+            0x0203 | 0x0204 | 0x00D6 | 0x0205 | 0x027E | 0x00FD if data.len() >= 4 => {
                 extend(&mut cells, u16_at(data, 0), u16_at(data, 2));
             }
             // Formula: a cached value and the formula text
-            0x0006 if len >= 4 => {
+            0x0006 if data.len() >= 4 => {
                 extend(&mut cells, u16_at(data, 0), u16_at(data, 2));
                 extend(&mut formulas, u16_at(data, 0), u16_at(data, 2));
             }
             // MulRk: row, first column, values…, last column
-            0x00BD if len >= 6 => {
-                extend(&mut cells, u16_at(data, 0), u16_at(data, len - 2));
+            0x00BD if data.len() >= 6 => {
+                extend(&mut cells, u16_at(data, 0), u16_at(data, data.len() - 2));
             }
             _ => continue,
         }
         budget.check(cells.0, cells.1)?;
     }
     budget.add(cells.0, cells.1)?;
-    budget.add(formulas.0, formulas.1)
+    budget.add(formulas.0, formulas.1)?;
+    Ok(())
+}
+
+/// Rows × cols of a Dimensions record, as calamine reads it (BIFF5: 10 bytes, BIFF8: 14/16).
+fn xls_dimensions(d: &[u8]) -> Option<(u64, u64)> {
+    let (rf, rl, cf, cl) = match d.len() {
+        10 => (
+            u64::from(u16_at(d, 0)),
+            u64::from(u16_at(d, 2)),
+            u64::from(u16_at(d, 4)),
+            u64::from(u16_at(d, 6)),
+        ),
+        14 | 16 => (
+            u64::from(u32_at(d, 0)),
+            u64::from(u32_at(d, 4)),
+            u64::from(u16_at(d, 8)),
+            u64::from(u16_at(d, 10)),
+        ),
+        _ => return None,
+    };
+    let cf = if cf > 0xFF || cl < cf { 0 } else { cf };
+    if rl >= 1 && cl >= 1 {
+        Some((rl.saturating_sub(rf), cl.saturating_sub(cf)))
+    } else {
+        Some((0, 0))
+    }
+}
+
+/// BIFF record iterator with calamine's framing: Continue records (0x003C)
+/// that follow a record belong to it and are skipped.
+struct Records<'a> {
+    rest: &'a [u8],
+}
+
+impl<'a> Records<'a> {
+    fn new(stream: &'a [u8]) -> Self {
+        Records { rest: stream }
+    }
+}
+
+impl<'a> Iterator for Records<'a> {
+    type Item = std::result::Result<(u16, &'a [u8]), ()>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.rest.len() < 4 {
+            return (!self.rest.is_empty()).then_some(Err(()));
+        }
+        let typ = u16_at(self.rest, 0);
+        let len = u16_at(self.rest, 2) as usize;
+        let Some(data) = self.rest.get(4..4 + len) else {
+            return Some(Err(()));
+        };
+        self.rest = &self.rest[4 + len..];
+        if self.rest.len() > 4 && u16_at(self.rest, 0) == 0x003C {
+            while self.rest.len() > 4 && u16_at(self.rest, 0) == 0x003C {
+                let len = u16_at(self.rest, 2) as usize;
+                let Some(next) = self.rest.get(4 + len..) else {
+                    return Some(Err(()));
+                };
+                self.rest = next;
+            }
+        }
+        Some(Ok((typ, data)))
+    }
+}
+
+fn u32_at(b: &[u8], i: usize) -> u32 {
+    u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]])
 }
 
 fn u16_at(b: &[u8], i: usize) -> u16 {
@@ -122,43 +234,39 @@ fn extend(extent: &mut (u64, u64), row: u16, col: u16) {
 /// `number-rows-repeated` and `number-columns-repeated` attributes the way
 /// calamine does.
 pub fn check_ods(bytes: &[u8], max_rows: usize, max_cells: usize) -> Result<()> {
-    let Ok(mut zip) = zip::ZipArchive::new(Cursor::new(bytes)) else {
-        return Ok(());
-    };
-    let Ok(content) = zip.by_name("content.xml") else {
-        return Ok(());
-    };
+    let corrupt = |what: &str| Error::corrupt(format!("ods: {what}"));
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(Error::corrupt)?;
+    let content = zip
+        .by_name("content.xml")
+        .map_err(|_| corrupt("no content.xml"))?;
     let mut reader = quick_xml::Reader::from_reader(BufReader::new(content));
+    // Same reader settings as calamine.
+    let config = reader.config_mut();
+    config.check_end_names = false;
+    config.trim_text(false);
     let mut budget = Budget::new(max_rows, max_cells);
     let mut table = OdsTable::default();
     let mut buf = Vec::new();
     loop {
-        let event = match reader.read_event_into(&mut buf) {
-            Ok(e) => e,
-            Err(_) => return Ok(()),
-        };
+        let event = reader
+            .read_event_into(&mut buf)
+            .map_err(|_| corrupt("malformed XML"))?;
         match &event {
             Event::Start(e) | Event::Empty(e) => {
                 let empty = matches!(event, Event::Empty(_));
                 match e.name().as_ref() {
                     "table:table" => table = OdsTable::default(),
                     "table:table-row" => {
-                        table.start_row(repeat(e, "table:number-rows-repeated"));
+                        table.start_row(repeat(e, "table:number-rows-repeated")?);
                         if empty {
                             table.end_row();
                         }
                     }
                     "table:table-cell" | "table:covered-table-cell" => {
                         let has_value = !empty
-                            || e.try_get_attribute("office:value-type")
-                                .ok()
-                                .flatten()
-                                .is_some()
-                            || e.try_get_attribute("table:formula")
-                                .ok()
-                                .flatten()
-                                .is_some();
-                        table.cell(repeat(e, "table:number-columns-repeated"), has_value);
+                            || raw_attr(e, "office:value-type")?.is_some()
+                            || raw_attr(e, "table:formula")?.is_some();
+                        table.cell(repeat(e, "table:number-columns-repeated")?, has_value);
                     }
                     _ => {}
                 }
@@ -184,12 +292,30 @@ pub fn check_ods(bytes: &[u8], max_rows: usize, max_cells: usize) -> Result<()> 
     }
 }
 
-fn repeat(e: &BytesStart<'_>, name: &str) -> u64 {
-    e.try_get_attribute(name)
-        .ok()
-        .flatten()
-        .and_then(|a| a.value.parse().ok())
-        .unwrap_or(1)
+/// The first attribute with this name, like calamine's `raw_attr` (no
+/// duplicate check). Malformed attributes are rejected.
+fn raw_attr(e: &BytesStart<'_>, name: &str) -> Result<Option<String>> {
+    for attr in e.attributes().with_checks(false) {
+        let attr = attr.map_err(|_| Error::corrupt("ods: malformed attribute"))?;
+        if attr.key.as_ref() == name {
+            let raw: &str = &attr.value;
+            let value = quick_xml::escape::unescape(raw)
+                .map_err(|_| Error::corrupt("ods: malformed attribute"))?;
+            return Ok(Some(value.into_owned()));
+        }
+    }
+    Ok(None)
+}
+
+/// A repeat count; a present but unreadable value is rejected, not read as 1.
+fn repeat(e: &BytesStart<'_>, name: &str) -> Result<u64> {
+    match raw_attr(e, name)? {
+        None => Ok(1),
+        Some(v) => v
+            .trim()
+            .parse()
+            .map_err(|_| Error::corrupt(format!("ods: invalid {name}"))),
+    }
 }
 
 /// Extent of the cells with a value in one ods table.

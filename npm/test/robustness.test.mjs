@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { lib, fixture, fixturesDir } from './helpers.mjs';
+
+const common = createRequire(import.meta.url)('../dist/node/common.js');
 
 const { readSheet, writeXlsx, ExcelError } = lib;
 const files = readdirSync(fixturesDir);
@@ -39,12 +42,30 @@ test('corrupted files fail cleanly', () => {
   assert.deepEqual(readSheet(fixture('utf8-bom.csv')).rows[0], ['a', 'b']);
 });
 
-test('a parser crash (WebAssembly trap) becomes CORRUPT_FILE and the module recovers', () => {
-  // This prefix of the xls fixture makes the parser panic, which aborts the WASM instance.
+test('a truncated xls is rejected before the parser runs', () => {
   const xls = fixture('reference-libreoffice.xls').subarray(0, 513);
-  assert.throws(() => readSheet(xls), { code: 'CORRUPT_FILE', message: /internal error/ });
+  assert.throws(() => readSheet(xls), { code: 'CORRUPT_FILE' });
   assert.equal(readSheet(fixture('reference-libreoffice.xls')).rows[3][5], 'Ende');
-  assert.ok(writeXlsx([{ name: 'S', columns: [], rows: [[1]] }]).length > 0);
+});
+
+test('a WebAssembly trap becomes CORRUPT_FILE and resets the instance', () => {
+  // (module (func (export "f") unreachable)): calling f raises a real RuntimeError.
+  const trapModule = new Uint8Array([
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x04, 0x01, 0x60, 0x00, 0x00, 0x03, 0x02, 0x01, 0x00,
+    0x07, 0x05, 0x01, 0x01, 0x66, 0x00, 0x00, 0x0a, 0x05, 0x01, 0x03, 0x00, 0x00, 0x0b,
+  ]);
+  const { f } = new WebAssembly.Instance(new WebAssembly.Module(trapModule)).exports;
+  let resets = 0;
+  const api = {
+    readSheet: () => f(),
+    writeXlsx: () => f(),
+    memoryBytes: () => 0,
+    __wbg_reset_state: () => resets++,
+  };
+  assert.throws(() => common.readSheetWith(api, new Uint8Array(4), {}), { code: 'CORRUPT_FILE', message: /internal error/ });
+  assert.equal(resets, 1);
+  assert.throws(() => common.writeXlsxWith(api, []), { code: 'INVALID_INPUT', message: /internal error/ });
+  assert.equal(resets, 2);
 });
 
 test('size limits', () => {

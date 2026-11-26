@@ -52,8 +52,8 @@ test('reads and writes in Chromium under a strict CSP', async () => {
     assert.deepEqual(result.row, ['Größe Äpfel ß €', 1234.56, '2024-02-29T00:00:00.000Z', true, 2469.12, null]);
     assert.deepEqual(result.roundTrip, [['a'], [1]]);
     assert.equal(result.errorCode, 'CORRUPT_FILE');
-    assert.equal(result.trapCode, 'CORRUPT_FILE');
-    assert.equal(result.afterTrap, 'Ende');
+    assert.equal(result.truncatedCode, 'CORRUPT_FILE');
+    assert.equal(result.afterTruncated, 'Ende');
   } finally {
     await browser.close();
     server.close();

@@ -15,18 +15,18 @@ const run = async () => {
   const roundTrip = (await readSheet(await writeXlsx([{ name: 'S', columns: [{ header: 'a' }], rows: [[1]] }]))).rows;
   let errorCode;
   await readSheet(new TextEncoder().encode('PK\u0003\u0004broken')).catch((e) => (errorCode = e.code));
-  // A prefix of the xls fixture crashes the parser (WebAssembly trap); the next call must work.
+  // A truncated xls is rejected; the next call must still work.
   const xls = new Uint8Array(await (await fetch('/fixtures/reference-libreoffice.xls')).arrayBuffer());
-  let trapCode;
-  await readSheet(xls.subarray(0, 513)).catch((e) => (trapCode = e.code));
-  const afterTrap = (await readSheet(xls)).rows[3][5];
+  let truncatedCode;
+  await readSheet(xls.subarray(0, 513)).catch((e) => (truncatedCode = e.code));
+  const afterTruncated = (await readSheet(xls)).rows[3][5];
   return {
     sheetNames: res.sheetNames,
     row: res.rows[1].map((v) => (v instanceof Date ? v.toISOString() : v)),
     roundTrip,
     errorCode,
-    trapCode,
-    afterTrap,
+    truncatedCode,
+    afterTruncated,
   };
 };
 (location.search === '?loadfail' ? loadFailure() : run()).then(

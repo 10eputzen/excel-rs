@@ -86,28 +86,124 @@ fn ods_trailing_empty_repeats_are_fine() {
     assert_eq!(data.rows.len(), 1);
 }
 
-#[test]
-fn xls_far_away_cell() {
-    // Minimal BIFF8 stream: BOF, Number at row 65535 / column 255, EOF.
-    let mut stream = Vec::new();
-    let mut record = |typ: u16, data: &[u8]| {
-        stream.extend_from_slice(&typ.to_le_bytes());
-        stream.extend_from_slice(&(data.len() as u16).to_le_bytes());
-        stream.extend_from_slice(data);
+/// Minimal BIFF8 workbook: globals with one BoundSheet8 per entry of
+/// `sheets` (all pointing at the same worksheet), then the worksheet records.
+fn xls(sheets: usize, worksheet: &[(u16, Vec<u8>)]) -> Vec<u8> {
+    let record = |out: &mut Vec<u8>, typ: u16, data: &[u8]| {
+        out.extend_from_slice(&typ.to_le_bytes());
+        out.extend_from_slice(&(data.len() as u16).to_le_bytes());
+        out.extend_from_slice(data);
     };
-    record(
-        0x0809,
-        &[0x00, 0x06, 0x10, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    );
-    let mut number = vec![0xFF, 0xFF, 0xFF, 0x00, 0, 0];
-    number.extend_from_slice(&1.0f64.to_le_bytes());
-    record(0x0203, &number);
-    record(0x000A, &[]);
+    let bof = [0x00, 0x06, 0x05, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    // BoundSheet8: offset (patched below), state, type, name length 1, flags, "S"
+    let bound_sheet = |offset: u32| {
+        let mut d = offset.to_le_bytes().to_vec();
+        d.extend_from_slice(&[0, 0, 1, 0, b'S']);
+        d
+    };
+    let globals_len = 4 + bof.len() + sheets * (4 + bound_sheet(0).len()) + 4;
+    let mut stream = Vec::new();
+    record(&mut stream, 0x0809, &bof);
+    for _ in 0..sheets {
+        record(&mut stream, 0x0085, &bound_sheet(globals_len as u32));
+    }
+    record(&mut stream, 0x000A, &[]);
+    assert_eq!(stream.len(), globals_len);
+    let mut sheet_bof = bof;
+    sheet_bof[2] = 0x10;
+    record(&mut stream, 0x0809, &sheet_bof);
+    for (typ, data) in worksheet {
+        record(&mut stream, *typ, data);
+    }
+    record(&mut stream, 0x000A, &[]);
     let mut cfb = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
     cfb.create_stream("/Workbook")
         .unwrap()
         .write_all(&stream)
         .unwrap();
-    let bytes = cfb.into_inner().into_inner();
+    cfb.into_inner().into_inner()
+}
+
+fn number(row: u16, col: u16) -> (u16, Vec<u8>) {
+    let mut d = row.to_le_bytes().to_vec();
+    d.extend_from_slice(&col.to_le_bytes());
+    d.extend_from_slice(&[0, 0]);
+    d.extend_from_slice(&1.0f64.to_le_bytes());
+    (0x0203, d)
+}
+
+#[test]
+fn xls_far_away_cell() {
+    // 65536 × 256 cells from two records.
+    let bytes = xls(1, &[number(0, 0), number(0xFFFF, 0xFF)]);
+    assert_too_large(&bytes, &ReadOptions::default());
+}
+
+#[test]
+fn xls_dimensions_record() {
+    // Dimensions claiming 1,000,000 × 255 cells: calamine reserves that up front.
+    let mut d = 0u32.to_le_bytes().to_vec();
+    d.extend_from_slice(&1_000_000u32.to_le_bytes());
+    d.extend_from_slice(&0u16.to_le_bytes());
+    d.extend_from_slice(&255u16.to_le_bytes());
+    d.extend_from_slice(&[0, 0]);
+    let bytes = xls(1, &[(0x0200, d)]);
+    assert_too_large(&bytes, &ReadOptions::default());
+}
+
+#[test]
+fn xls_sheet_listed_many_times() {
+    // 2,000 × 100 cells is fine once, but 100 BoundSheet8 entries point at it.
+    let bytes = xls(100, &[number(0, 0), number(1_999, 99)]);
+    assert_too_large(&bytes, &ReadOptions::default());
+    let once = xls(1, &[number(0, 0), number(1_999, 99)]);
+    let err = read_sheet(&once, &ReadOptions::default()).err();
+    assert!(
+        err.as_ref().is_none_or(|e| e.code != ErrorCode::TooLarge),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn xls_not_a_compound_file() {
+    let mut bytes = vec![0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+    bytes.extend_from_slice(&[0; 600]);
+    let err = read_sheet(&bytes, &ReadOptions::default()).unwrap_err();
+    assert_eq!(err.code, ErrorCode::CorruptFile);
+}
+
+#[test]
+fn ods_invalid_or_duplicate_repeat_attribute() {
+    let doc = |row_attrs: &str| {
+        format!(
+            r#"<?xml version="1.0"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:spreadsheet>
+<table:table table:name="Daten"><table:table-row {row_attrs}><table:table-cell table:number-columns-repeated="16384" office:value-type="float" office:value="1"><text:p>1</text:p></table:table-cell></table:table-row></table:table>
+</office:spreadsheet></office:body></office:document-content>"#
+        )
+    };
+    let ods = fixture("reference-libreoffice.ods");
+    // Unparseable count: rejected, not read as 1.
+    let bytes = replace_entry(
+        &ods,
+        "content.xml",
+        doc(r#"table:number-rows-repeated="1e6""#).as_bytes(),
+    );
+    assert_eq!(
+        read_sheet(&bytes, &ReadOptions::default())
+            .unwrap_err()
+            .code,
+        ErrorCode::CorruptFile
+    );
+    // Duplicate attribute: the first one counts, as in the parser.
+    let dup = r#"table:number-rows-repeated="1000000" table:number-rows-repeated="1""#;
+    let bytes = replace_entry(&ods, "content.xml", doc(dup).as_bytes());
+    assert_too_large(&bytes, &ReadOptions::default());
+    // Entity-encoded digits are decoded before counting.
+    let bytes = replace_entry(
+        &ods,
+        "content.xml",
+        doc(r#"table:number-rows-repeated="&#49;000000""#).as_bytes(),
+    );
     assert_too_large(&bytes, &ReadOptions::default());
 }
