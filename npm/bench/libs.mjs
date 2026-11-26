@@ -20,10 +20,6 @@ export const LIBS = {
     label: 'SheetJS 0.20.3',
     load: () => sheetjs(require('xlsx')),
   },
-  'xlsx-npm': {
-    label: 'xlsx 0.18.5 (npm)',
-    load: () => sheetjs(require('xlsx-npm')),
-  },
   exceljs: {
     label: 'exceljs 4.4.0',
     load: () => {
