@@ -2,7 +2,7 @@
  * excel-rs for browsers (and any runtime with ES modules and fetch):
  * read xlsx, xls, xlsb, ods and csv; write xlsx.
  *
- * Load it lazily where it is needed, e.g. `await import('excel-rs/browser')`.
+ * Load it lazily where it is needed, e.g. `await import('@10eputzen/excel-rs/browser')`.
  * The WebAssembly file (~0.7 MB gzip) is fetched on the first call or by `initExcel()`.
  *
  * @deprecated Since 0.2.0. Read files on the server with the Node.js entry and

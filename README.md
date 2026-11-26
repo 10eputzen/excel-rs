@@ -3,11 +3,11 @@
 Fast, strict spreadsheet import and export for Node.js. Reads xlsx, xlsm, xls, xlsb, ods and csv, validates rows against a schema with messages for end users, and writes xlsx. A Rust core compiled to WebAssembly: one package that runs wherever Node.js runs (tested on Linux and Windows), no native binaries, no postinstall, no runtime dependencies.
 
 ```sh
-npm install excel-rs
+npm install @10eputzen/excel-rs
 ```
 
 ```ts
-import { readSheet } from 'excel-rs';
+import { readSheet } from '@10eputzen/excel-rs';
 
 const { rows, errors } = readSheet(bytes, {
   schema: {
@@ -29,11 +29,11 @@ const { rows, errors } = readSheet(bytes, {
 
 | Entry | Use | API |
 |---|---|---|
-| `excel-rs` | Node.js 20+ (CommonJS and ESM), also serverless | synchronous |
-| `excel-rs/detect` | browsers: check a file before uploading it | pure TypeScript, under 2 KB gzip |
-| `excel-rs/browser` | deprecated, see [Browser](#browser-deprecated) | `async`, loads 0.8 MB of WebAssembly |
+| `@10eputzen/excel-rs` | Node.js 20+ (CommonJS and ESM), also serverless | synchronous |
+| `@10eputzen/excel-rs/detect` | browsers: check a file before uploading it | pure TypeScript, under 2 KB gzip |
+| `@10eputzen/excel-rs/browser` | deprecated, see [Browser](#browser-deprecated) | `async`, loads 0.8 MB of WebAssembly |
 
-The intended setup for web apps: the browser checks the file with `excel-rs/detect` and uploads it; the server reads it with `readSheet` and a schema, shows the user a preview with the errors, and writes only after confirmation.
+The intended setup for web apps: the browser checks the file with `@10eputzen/excel-rs/detect` and uploads it; the server reads it with `readSheet` and a schema, shows the user a preview with the errors, and writes only after confirmation.
 
 ## Benchmarks
 
@@ -62,7 +62,7 @@ Details and how to run it: [docs/benchmarks.md](docs/benchmarks.md). The CI fail
 
 ```ts
 import { readFileSync } from 'node:fs';
-import { readSheet } from 'excel-rs';
+import { readSheet } from '@10eputzen/excel-rs';
 
 const { sheetNames, sheet, rows } = readSheet(readFileSync('orders.xlsx'));
 // rows: (string | number | boolean | Date | null)[][]
@@ -107,7 +107,7 @@ CSV cells are always strings (or `null` when empty). Number and date formats in 
 ## Validating with a schema
 
 ```ts
-import { readSheet } from 'excel-rs';
+import { readSheet } from '@10eputzen/excel-rs';
 
 const { rows, rowNumbers, errors, rowCount } = readSheet(bytes, {
   schema: {
@@ -145,7 +145,7 @@ const { rows, rowNumbers, errors, rowCount } = readSheet(bytes, {
 Declare a schema in its own variable with `satisfies Schema`, so the column types stay literal and the row type is inferred:
 
 ```ts
-import { readSheet, type Schema } from 'excel-rs';
+import { readSheet, type Schema } from '@10eputzen/excel-rs';
 
 const orders = {
   qty: { header: 'Menge', type: 'integer', required: true },
@@ -157,7 +157,7 @@ const { rows } = readSheet(bytes, { schema: orders }); // rows: { qty: number }[
 ## Checking files before upload
 
 ```ts
-import { detectFormat, readCsvHeader, missingColumns } from 'excel-rs/detect';
+import { detectFormat, readCsvHeader, missingColumns } from '@10eputzen/excel-rs/detect';
 
 const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
 const format = detectFormat(head); // 'xlsx' | 'ods' | 'xls' | 'csv' | 'unknown'
@@ -174,7 +174,7 @@ if (format === 'csv') {
 
 ```ts
 import { writeFileSync } from 'node:fs';
-import { writeXlsx } from 'excel-rs';
+import { writeXlsx } from '@10eputzen/excel-rs';
 
 const bytes = writeXlsx([
   {
@@ -202,13 +202,13 @@ writeFileSync('orders.xlsx', bytes);
 
 ## Browser (deprecated)
 
-`excel-rs/browser` runs the full reader and writer in the browser. It is deprecated since 0.2.0 because it loads about 0.8 MB of WebAssembly (gzip): read files on the server and check them before the upload with [`excel-rs/detect`](#checking-files-before-upload). It keeps working until a later major version removes it.
+`@10eputzen/excel-rs/browser` runs the full reader and writer in the browser. It is deprecated since 0.2.0 because it loads about 0.8 MB of WebAssembly (gzip): read files on the server and check them before the upload with [`@10eputzen/excel-rs/detect`](#checking-files-before-upload). It keeps working until a later major version removes it.
 
 ```ts
-const { readSheet, writeXlsx, initExcel } = await import('excel-rs/browser');
+const { readSheet, writeXlsx, initExcel } = await import('@10eputzen/excel-rs/browser');
 ```
 
-Same options (without `schema`), results and errors as in Node.js, but every function returns a promise. The `.wasm` is loaded from next to the bindings (Vite and webpack 5 bundle it); with other bundlers copy `node_modules/excel-rs/wasm/web/excel_rs_wasm_bg.wasm` to your assets and call `initExcel(url)` first. A failed load rejects with `WASM_LOAD_FAILED` and is retried on the next call. The page needs `'wasm-unsafe-eval'` in `script-src`.
+Same options (without `schema`), results and errors as in Node.js, but every function returns a promise. The `.wasm` is loaded from next to the bindings (Vite and webpack 5 bundle it); with other bundlers copy `node_modules/@10eputzen/excel-rs/wasm/web/excel_rs_wasm_bg.wasm` to your assets and call `initExcel(url)` first. A failed load rejects with `WASM_LOAD_FAILED` and is retried on the next call. The page needs `'wasm-unsafe-eval'` in `script-src`.
 
 ## Errors
 
@@ -224,7 +224,7 @@ Both functions throw `ExcelError` with a `code` (the browser entry rejects with 
 | `WASM_LOAD_FAILED` | browser entry only: the WebAssembly file could not be loaded |
 
 ```ts
-import { ExcelError } from 'excel-rs';
+import { ExcelError } from '@10eputzen/excel-rs';
 
 try {
   readSheet(bytes);

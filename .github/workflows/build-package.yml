@@ -7,7 +7,7 @@ on:
     inputs:
       package-name:
         type: string
-        default: excel-rs
+        default: ''
 
 permissions: {}
 
@@ -51,7 +51,7 @@ jobs:
           npx playwright install --with-deps chromium
           npm run test:browser
       - name: Package name
-        if: inputs.package-name != 'excel-rs'
+        if: inputs.package-name != ''
         working-directory: npm
         run: npm pkg set name="$PACKAGE_NAME"
         env:
