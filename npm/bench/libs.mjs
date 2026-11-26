@@ -50,7 +50,7 @@ export const LIBS = {
     },
   },
   'read-excel-file': {
-    label: 'read-excel-file 9.3.14',
+    label: 'read-excel-file 9.3.20',
     load: async () => {
       const { default: readXlsxFile } = await import('read-excel-file/node');
       // Version 9 returns every sheet: [{ sheet, data }].
