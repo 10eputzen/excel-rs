@@ -1,0 +1,58 @@
+{
+  "name": "excel-rs",
+  "version": "0.1.0",
+  "description": "Fast spreadsheet import/export for Node.js: read xlsx, xls, xlsb, ods and csv, write xlsx. Rust core compiled to WebAssembly, zero runtime dependencies.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/10eputzen/excel-rs.git",
+    "directory": "npm"
+  },
+  "keywords": [
+    "excel",
+    "xlsx",
+    "xls",
+    "xlsb",
+    "ods",
+    "csv",
+    "spreadsheet",
+    "import",
+    "export",
+    "wasm",
+    "rust"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "wasm/excel_rs_wasm.js",
+    "wasm/excel_rs_wasm_bg.wasm",
+    "wasm/excel_rs_wasm.d.ts",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "build:ts": "tsc -p tsconfig.json",
+    "build": "npm run build:wasm && npm run build:ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test \"test/*.test.mjs\"",
+    "prepack": "node -e \"require('fs').copyFileSync('../README.md','README.md')\"",
+    "fixtures": "node scripts/make-fixtures.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  }
+}
