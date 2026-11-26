@@ -252,8 +252,10 @@ fn to_u32(s: &[u8]) -> Result<Vec<u32>> {
     if !s.len().is_multiple_of(4) {
         return Err(OleError);
     }
-    Ok(s.chunks_exact(4)
-        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+    Ok(s.as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect())
 }
 
