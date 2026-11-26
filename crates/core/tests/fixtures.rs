@@ -78,3 +78,16 @@ fn truncated_input_is_an_error_not_a_panic() {
         }
     }
 }
+
+#[test]
+fn far_away_cell_is_rejected_before_allocation() {
+    // Two cells, A1 and XFD5000: the dense result would have 82 million cells.
+    let mut wb = rust_xlsxwriter::Workbook::new();
+    let ws = wb.add_worksheet();
+    ws.write_string(0, 0, "a").unwrap();
+    ws.write_string(4999, 16_383, "z").unwrap();
+    let bytes = wb.save_to_buffer().unwrap();
+    assert!(bytes.len() < 10_000);
+    let err = read_sheet(&bytes, &ReadOptions::default()).unwrap_err();
+    assert_eq!(err.code, excel_rs_core::ErrorCode::TooLarge);
+}

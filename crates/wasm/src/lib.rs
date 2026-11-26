@@ -25,6 +25,20 @@ pub fn write_xlsx(sheets_json: &str) -> Result<Vec<u8>, JsValue> {
     write_xlsx_json(sheets_json).map_err(|e| JsValue::from_str(&e.to_json()))
 }
 
+/// Current size of the WebAssembly memory in bytes. The wrapper drops the
+/// instance after large reads, because WebAssembly memory never shrinks.
+#[wasm_bindgen(js_name = memoryBytes)]
+pub fn memory_bytes() -> f64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        (core::arch::wasm32::memory_size(0) * 65_536) as f64
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        0.0
+    }
+}
+
 /// Parses the options object built by the TypeScript wrapper.
 pub fn parse_read_options(json: &str) -> Result<ReadOptions, Error> {
     use serde_json::Value as J;
@@ -56,17 +70,19 @@ pub fn parse_read_options(json: &str) -> Result<ReadOptions, Error> {
                 .ok_or_else(|| Error::invalid(format!("{key} must be a non-negative integer"))),
         }
     };
+    // Saturate instead of truncating on 32-bit targets.
+    let to_usize = |n: u64| usize::try_from(n).unwrap_or(usize::MAX);
     if let Some(n) = limit("maxBytes")? {
-        opts.max_bytes = n as usize;
+        opts.max_bytes = to_usize(n);
     }
     if let Some(n) = limit("maxUncompressedBytes")? {
         opts.max_uncompressed_bytes = n;
     }
     if let Some(n) = limit("maxRows")? {
-        opts.max_rows = n as usize;
+        opts.max_rows = to_usize(n);
     }
     if let Some(n) = limit("maxCells")? {
-        opts.max_cells = n as usize;
+        opts.max_cells = to_usize(n);
     }
     Ok(opts)
 }

@@ -12,7 +12,7 @@ Fast spreadsheet import and export for Node.js.
 npm install excel-rs
 ```
 
-Requires Node.js 18 or newer. Works in serverless environments that run Node.js.
+Requires Node.js 20 or newer. Works in serverless environments that run Node.js.
 
 ## Reading
 
@@ -41,12 +41,14 @@ readSheet(bytes, {
     delimiter: 'auto',     // ',' | ';' | '\t' | '|'
     encoding: 'auto',      // 'utf-8' | 'windows-1252'
   },
-  maxBytes: 100 * 1024 ** 2,             // input size
-  maxUncompressedBytes: 1024 ** 3,       // zip-based formats, checked before parsing
+  maxBytes: 50 * 1024 ** 2,              // input size
+  maxUncompressedBytes: 500 * 1024 ** 2, // zip-based formats, checked before parsing
   maxRows: 1_048_576,
-  maxCells: 20_000_000,                  // rows × columns of the result
+  maxCells: 5_000_000,                   // rows × columns of the result
 });
 ```
+
+Invalid option values throw `INVALID_INPUT`. For xlsx and xlsb the row and cell limits are enforced while reading, before the result is allocated. For xls and ods the parser allocates the sheet first; the WebAssembly memory is capped at 2 GiB, so a malicious file fails with `CORRUPT_FILE` instead of exhausting the process. After a call that grew the WebAssembly memory beyond 256 MiB, the module is reloaded so that the memory is released.
 
 ### CSV
 
@@ -114,6 +116,7 @@ try {
 - xlsb files that use compact cell records (written by some third-party tools) lose most cell values. Files written by Excel are expected to work but are not yet covered by the test suite.
 - No formulas, styles beyond the header row, images or charts when writing.
 - The whole file is held in memory.
+- Tested with files written by LibreOffice, SheetJS and this package. Files from Excel and Google Sheets are not yet part of the test suite.
 
 ## Development
 

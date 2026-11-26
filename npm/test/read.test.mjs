@@ -78,6 +78,13 @@ test('accepts ArrayBuffer and Uint8Array', () => {
   assert.throws(() => readSheet('nope'), { code: 'INVALID_INPUT' });
 });
 
+test('invalid options are rejected instead of ignored', () => {
+  const csv = fixture('utf8-bom.csv');
+  for (const opts of [{ sheet: NaN }, { sheet: -1 }, { sheet: 1.5 }, { maxRows: NaN }, { maxBytes: -1 }, { maxCells: '5' }, null]) {
+    assert.throws(() => readSheet(csv, opts), { code: 'INVALID_INPUT' }, String(JSON.stringify(opts)));
+  }
+});
+
 test('empty csv gives no rows', () => {
   assert.deepEqual(readSheet(Buffer.from('')).rows, []);
 });

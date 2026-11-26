@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use calamine::{Data, Ods, Range, Reader, Xls, Xlsb, Xlsx};
+use calamine::{Data, DataRef, Ods, Range, Reader, Xls, Xlsb, Xlsx};
 
 use crate::csv_read::{read_csv, CsvOptions};
 use crate::detect::{check_zip_size, detect, Format};
@@ -39,10 +39,10 @@ impl Default for ReadOptions {
             format: None,
             sheet: SheetSelector::First,
             csv: CsvOptions::default(),
-            max_bytes: 100 * 1024 * 1024,
-            max_uncompressed_bytes: 1024 * 1024 * 1024,
+            max_bytes: 50 * 1024 * 1024,
+            max_uncompressed_bytes: 500 * 1024 * 1024,
             max_rows: 1_048_576,
-            max_cells: 20_000_000,
+            max_cells: 5_000_000,
         }
     }
 }
@@ -96,8 +96,8 @@ fn read_sheet_inner(bytes: &[u8], opts: &ReadOptions) -> Result<SheetData> {
                 rows,
             })
         }
-        Format::Xlsx => from_workbook(Xlsx::new(Cursor::new(bytes)).map_err(Error::corrupt)?, opts),
-        Format::Xlsb => from_workbook(Xlsb::new(Cursor::new(bytes)).map_err(Error::corrupt)?, opts),
+        Format::Xlsx => read_xlsx(bytes, opts),
+        Format::Xlsb => read_xlsb(bytes, opts),
         Format::Xls => from_workbook(Xls::new(Cursor::new(bytes)).map_err(Error::corrupt)?, opts),
         Format::Ods => from_workbook(Ods::new(Cursor::new(bytes)).map_err(Error::corrupt)?, opts),
     }
@@ -120,6 +120,91 @@ where
     })
 }
 
+/// xlsx and xlsb are read cell by cell, so the limits apply before a dense grid
+/// is allocated (a tiny file can reference cell XFD1048576).
+fn read_xlsx(bytes: &[u8], opts: &ReadOptions) -> Result<SheetData> {
+    let mut wb = Xlsx::new(Cursor::new(bytes)).map_err(Error::corrupt)?;
+    let sheet_names = wb.sheet_names();
+    let sheet = select_sheet(&sheet_names, &opts.sheet)?;
+    let mut reader = wb.worksheet_cells_reader(&sheet).map_err(Error::corrupt)?;
+    let mut grid = SparseGrid::new(opts);
+    while let Some(cell) = reader.next_cell().map_err(Error::corrupt)? {
+        grid.push(cell.get_position(), convert_ref(cell.get_value()))?;
+    }
+    Ok(SheetData {
+        sheet_names,
+        sheet,
+        rows: grid.into_rows(),
+    })
+}
+
+fn read_xlsb(bytes: &[u8], opts: &ReadOptions) -> Result<SheetData> {
+    let mut wb = Xlsb::new(Cursor::new(bytes)).map_err(Error::corrupt)?;
+    let sheet_names = wb.sheet_names();
+    let sheet = select_sheet(&sheet_names, &opts.sheet)?;
+    let mut reader = wb.worksheet_cells_reader(&sheet).map_err(Error::corrupt)?;
+    let mut grid = SparseGrid::new(opts);
+    while let Some(cell) = reader.next_cell().map_err(Error::corrupt)? {
+        grid.push(cell.get_position(), convert_ref(cell.get_value()))?;
+    }
+    Ok(SheetData {
+        sheet_names,
+        sheet,
+        rows: grid.into_rows(),
+    })
+}
+
+/// Collects non-empty cells and enforces the row and cell limits on the
+/// dense result size before it is allocated.
+struct SparseGrid {
+    cells: Vec<(u32, u32, Value)>,
+    rows: usize,
+    cols: usize,
+    max_rows: usize,
+    max_cells: usize,
+}
+
+impl SparseGrid {
+    fn new(opts: &ReadOptions) -> Self {
+        SparseGrid {
+            cells: Vec::new(),
+            rows: 0,
+            cols: 0,
+            max_rows: opts.max_rows,
+            max_cells: opts.max_cells,
+        }
+    }
+
+    fn push(&mut self, (r, c): (u32, u32), value: Value) -> Result<()> {
+        if value == Value::Empty {
+            return Ok(());
+        }
+        self.rows = self.rows.max(r as usize + 1);
+        self.cols = self.cols.max(c as usize + 1);
+        check_limits(self.rows, self.cols, self.max_rows, self.max_cells)?;
+        self.cells.push((r, c, value));
+        Ok(())
+    }
+
+    fn into_rows(self) -> Vec<Vec<Value>> {
+        let mut out = vec![vec![Value::Empty; self.cols]; self.rows];
+        for (r, c, v) in self.cells {
+            out[r as usize][c as usize] = v;
+        }
+        out
+    }
+}
+
+fn check_limits(rows: usize, cols: usize, max_rows: usize, max_cells: usize) -> Result<()> {
+    if rows > max_rows {
+        return Err(Error::too_large(format!("more than {max_rows} rows")));
+    }
+    if rows.saturating_mul(cols) > max_cells {
+        return Err(Error::too_large(format!("more than {max_cells} cells")));
+    }
+    Ok(())
+}
+
 fn select_sheet(names: &[String], sel: &SheetSelector) -> Result<String> {
     let found = match sel {
         SheetSelector::First => names.first(),
@@ -136,6 +221,9 @@ fn select_sheet(names: &[String], sel: &SheetSelector) -> Result<String> {
     })
 }
 
+/// xls and ods: calamine builds the dense range itself, so a far-away cell is
+/// allocated before these limits apply. In WebAssembly the memory cap turns that
+/// into a trap, which the JavaScript wrapper reports as CORRUPT_FILE.
 fn range_to_rows(range: &Range<Data>, opts: &ReadOptions) -> Result<Vec<Vec<Value>>> {
     let Some((end_row, end_col)) = range.end() else {
         return Ok(Vec::new());
@@ -175,6 +263,23 @@ fn convert(data: &Data) -> Value {
             .map(Value::Date)
             .unwrap_or_else(|| Value::String(s.clone())),
         Data::DurationIso(s) => Value::String(s.clone()),
+    }
+}
+
+fn convert_ref(data: &DataRef<'_>) -> Value {
+    match data {
+        DataRef::Empty | DataRef::Error(_) => Value::Empty,
+        DataRef::Int(i) => Value::Number(*i as f64),
+        DataRef::Float(f) => Value::Number(*f),
+        DataRef::String(s) => Value::String(s.clone()),
+        DataRef::SharedString(s) => Value::String((*s).to_owned()),
+        DataRef::Bool(b) => Value::Bool(*b),
+        DataRef::DateTime(dt) if dt.is_duration() => Value::Number(dt.as_f64()),
+        DataRef::DateTime(dt) => Value::Date(excel_datetime_to_ms(dt)),
+        DataRef::DateTimeIso(s) => parse_iso_datetime(s)
+            .map(Value::Date)
+            .unwrap_or_else(|| Value::String(s.clone())),
+        DataRef::DurationIso(s) => Value::String(s.clone()),
     }
 }
 

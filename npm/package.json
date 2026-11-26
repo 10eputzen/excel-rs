@@ -38,7 +38,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "sideEffects": false,
   "scripts": {
@@ -46,7 +46,7 @@
     "build:ts": "tsc -p tsconfig.json",
     "build": "npm run build:wasm && npm run build:ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test \"test/*.test.mjs\"",
+    "test": "node --test test/read.test.mjs test/write.test.mjs test/robustness.test.mjs test/performance.test.mjs",
     "prepack": "node -e \"require('fs').copyFileSync('../README.md','README.md')\"",
     "fixtures": "node scripts/make-fixtures.mjs"
   },

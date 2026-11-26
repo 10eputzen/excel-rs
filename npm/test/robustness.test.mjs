@@ -56,6 +56,8 @@ test('size limits', () => {
   assert.equal(readSheet(xlsx, { maxRows: 4, maxCells: 24 }).rows.length, 4);
   assert.throws(() => readSheet(Buffer.from('1\n2\n3\n'), { maxRows: 2 }), { code: 'TOO_LARGE' });
   assert.throws(() => readSheet(xlsx, { maxRows: -1 }), { code: 'INVALID_INPUT' });
+  // Large limits are not truncated to 32 bits.
+  assert.equal(readSheet(xlsx, { maxBytes: 2 ** 32 }).rows.length, 4);
 });
 
 test('highly compressed archive (zip bomb) is rejected before parsing', () => {
@@ -69,4 +71,19 @@ test('sparse sheet with a far-away cell hits the cell limit instead of allocatin
   // A row with a cell far to the right would be padded to a huge dense grid.
   const out = writeXlsx([{ name: 'S', columns: [], rows: [['a', ...new Array(16_000).fill(null), 'z']] }]);
   assert.throws(() => readSheet(out, { maxCells: 10_000 }), { code: 'TOO_LARGE' });
+});
+
+test('tiny csv that pads to a huge grid is rejected with default limits', () => {
+  // 2,000 one-cell rows plus one row with 10,000 fields: 20 million cells after padding.
+  const csv = Buffer.from('a\n'.repeat(2000) + ';'.repeat(9999) + '\n');
+  const before = process.memoryUsage().rss;
+  assert.throws(() => readSheet(csv, { csv: { delimiter: ';' } }), { code: 'TOO_LARGE' });
+  assert.ok(process.memoryUsage().rss - before < 200 * 1024 * 1024);
+});
+
+test('a large read does not break the next call', () => {
+  const rows = Array.from({ length: 200_000 }, (_, i) => [i, 'text', i * 2, 'more text', i]);
+  readSheet(writeXlsx([{ name: 'S', columns: [], rows }]));
+  // The next call still works on a fresh instance.
+  assert.deepEqual(readSheet(fixture('utf8-bom.csv')).rows[0], ['a', 'b']);
 });

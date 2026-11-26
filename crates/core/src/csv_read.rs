@@ -119,17 +119,16 @@ pub fn read_csv(
         .from_reader(text.as_bytes());
     let mut rows: Vec<Vec<Value>> = Vec::new();
     let mut width = 0usize;
-    let mut cells = 0usize;
     for record in reader.records() {
         let record = record.map_err(Error::corrupt)?;
         if rows.len() >= max_rows {
             return Err(Error::too_large(format!("more than {max_rows} rows")));
         }
-        cells += record.len();
-        if cells > max_cells {
+        // The result is padded to rows × widest row, so that is what counts.
+        width = width.max(record.len());
+        if (rows.len() + 1).saturating_mul(width) > max_cells {
             return Err(Error::too_large(format!("more than {max_cells} cells")));
         }
-        width = width.max(record.len());
         rows.push(
             record
                 .iter()
@@ -199,6 +198,22 @@ mod tests {
         assert_eq!(detect_delimiter("a,b\n1,2\n"), b',');
         assert_eq!(detect_delimiter("a\tb\n1\t2\n"), b'\t');
         assert_eq!(detect_delimiter("\"a;b\",c\n1,2\n"), b',');
+    }
+
+    #[test]
+    fn cell_limit_counts_padding() {
+        // 3 rows, one of them 1000 wide: 3000 cells after padding.
+        let mut csv = b"a\nb\n".to_vec();
+        csv.extend(std::iter::repeat_n(b';', 999));
+        let semi = CsvOptions {
+            delimiter: Some(b';'),
+            ..Default::default()
+        };
+        let err = read_csv(&csv, &semi, 100, 2000).unwrap_err();
+        assert_eq!(err.code, crate::ErrorCode::TooLarge);
+        let wide_first = [vec![b';'; 999], b"\nb\nc\n".to_vec()].concat();
+        let err = read_csv(&wide_first, &semi, 100, 2000).unwrap_err();
+        assert_eq!(err.code, crate::ErrorCode::TooLarge);
     }
 
     #[test]

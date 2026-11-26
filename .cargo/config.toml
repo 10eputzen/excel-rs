@@ -1,0 +1,5 @@
+# Cap WebAssembly memory at 2 GiB: a malicious file that makes a parser
+# allocate more fails with a trap (reported as CORRUPT_FILE) instead of
+# exhausting the host process.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--max-memory=2147483648"]

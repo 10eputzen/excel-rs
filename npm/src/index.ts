@@ -26,13 +26,13 @@ export interface ReadOptions {
     /** Text encoding. `auto` (default): UTF-8/UTF-16 with BOM, else UTF-8, else Windows-1252. */
     encoding?: 'auto' | 'utf-8' | 'windows-1252';
   };
-  /** Maximum input size in bytes. Default 100 MiB. */
+  /** Maximum input size in bytes. Default 50 MiB. */
   maxBytes?: number;
-  /** Maximum uncompressed size of xlsx/xlsb/ods archives. Default 1 GiB. */
+  /** Maximum uncompressed size of xlsx/xlsb/ods archives. Default 500 MiB. */
   maxUncompressedBytes?: number;
   /** Maximum number of rows. Default 1,048,576. */
   maxRows?: number;
-  /** Maximum number of cells (rows × columns). Default 20,000,000. */
+  /** Maximum number of cells (rows × columns) of the result. Default 5,000,000. */
   maxCells?: number;
 }
 
@@ -81,7 +81,12 @@ export class ExcelError extends Error {
 interface WasmApi {
   readSheet(bytes: Uint8Array, opts: string): string;
   writeXlsx(sheets: string): Uint8Array;
+  memoryBytes(): number;
 }
+
+const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
+/** WebAssembly memory never shrinks; above this size the instance is dropped after a call. */
+const MEMORY_RESET_BYTES = 256 * 1024 * 1024;
 
 // `WebAssembly` types are not part of the Node-only lib; the class is looked up at runtime.
 const RuntimeError = (globalThis as unknown as { WebAssembly: { RuntimeError: unknown } }).WebAssembly
@@ -94,18 +99,28 @@ function load(): WasmApi {
   return wasm;
 }
 
-/** Runs a WASM call; a trap leaves the instance unusable, so it is reloaded. */
+function unload(): void {
+  delete require.cache[WASM_PATH];
+  wasm = undefined;
+}
+
+/**
+ * Runs a WASM call. A trap leaves the instance unusable, and a large call leaves
+ * its memory allocated; in both cases a fresh instance is loaded on the next call.
+ */
 function call<T>(fn: (api: WasmApi) => T, onTrap: ErrorCode): T {
+  const api = load();
   try {
-    return fn(load());
+    return fn(api);
   } catch (err) {
     if (typeof err === 'string') throw toExcelError(err);
     if (err instanceof Error && err.constructor === RuntimeError) {
-      delete require.cache[WASM_PATH];
-      wasm = undefined;
+      unload();
       throw new ExcelError(onTrap, `internal error: ${err.message}`);
     }
     throw err;
+  } finally {
+    if (wasm === api && api.memoryBytes() > MEMORY_RESET_BYTES) unload();
   }
 }
 
@@ -129,7 +144,13 @@ function toBytes(input: Uint8Array | ArrayBuffer): Uint8Array {
  * Formula cells yield their last calculated value; csv cells are always strings.
  */
 export function readSheet(input: Uint8Array | ArrayBuffer, options: ReadOptions = {}): SheetResult {
+  validateOptions(options);
   const bytes = toBytes(input);
+  // Checked here too, so oversized input is not copied into WebAssembly memory.
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+  if (bytes.byteLength > maxBytes) {
+    throw new ExcelError('TOO_LARGE', `input exceeds ${maxBytes} bytes`);
+  }
   const json = call((api) => api.readSheet(bytes, JSON.stringify(options)), 'CORRUPT_FILE');
   const result = JSON.parse(json) as { sheetNames: string[]; sheet: string; rows: unknown[][] };
   for (const row of result.rows) {
@@ -139,6 +160,19 @@ export function readSheet(input: Uint8Array | ArrayBuffer, options: ReadOptions 
     }
   }
   return result as SheetResult;
+}
+
+function validateOptions(o: ReadOptions): void {
+  if (o === null || typeof o !== 'object') throw new ExcelError('INVALID_INPUT', 'options must be an object');
+  const isCount = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+  if (o.sheet !== undefined && typeof o.sheet !== 'string' && !isCount(o.sheet)) {
+    throw new ExcelError('INVALID_INPUT', 'sheet must be a name or a non-negative integer index');
+  }
+  for (const key of ['maxBytes', 'maxUncompressedBytes', 'maxRows', 'maxCells'] as const) {
+    if (o[key] !== undefined && !isCount(o[key])) {
+      throw new ExcelError('INVALID_INPUT', `${key} must be a non-negative integer`);
+    }
+  }
 }
 
 /** Writes an xlsx workbook. Strings are written as text (never as formulas). */
