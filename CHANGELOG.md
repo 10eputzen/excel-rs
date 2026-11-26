@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 – 2026-11-26
+
+- `readSheet(bytes, { schema })`: finds columns by header (aliases, ignoring case and spaces), converts cells to string, number, integer, date or boolean (German notation for text: `1.234,56`, `31.12.2025`, `ja`/`nein`), checks required, min/max, pattern, allowed values and own rules, and returns valid rows as typed objects plus errors with row, cell and a German message.
+- New entry `excel-rs/detect` (pure TypeScript, under 2 KB gzip, no WebAssembly): `detectFormat`, `readCsvHeader`, `missingColumns` for checks in the browser before an upload.
+- `excel-rs/browser` is deprecated; it stays until a later major version.
+
 ## 0.1.0 – unreleased
 
 - `readSheet`: read xlsx, xlsm, xls, xlsb, ods and csv (delimiter and encoding detection, BOM, Windows-1252).

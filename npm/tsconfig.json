@@ -6,5 +6,5 @@
     "types": ["node"],
     "outDir": "dist/node"
   },
-  "files": ["src/lib/index.ts"]
+  "files": ["src/lib/index.ts", "src/lib/detect.ts"]
 }

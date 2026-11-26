@@ -6,5 +6,5 @@
     "types": [],
     "outDir": "dist/browser"
   },
-  "files": ["src/lib/browser.ts"]
+  "files": ["src/lib/browser.ts", "src/lib/detect.ts"]
 }
