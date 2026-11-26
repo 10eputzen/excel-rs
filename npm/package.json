@@ -30,9 +30,14 @@
       "default": "./dist/node/index.js"
     },
     "./detect": {
-      "types": "./dist/node/detect.d.ts",
-      "import": "./dist/browser/detect.js",
-      "require": "./dist/node/detect.js"
+      "import": {
+        "types": "./dist/browser/detect.d.ts",
+        "default": "./dist/browser/detect.js"
+      },
+      "require": {
+        "types": "./dist/node/detect.d.ts",
+        "default": "./dist/node/detect.js"
+      }
     },
     "./browser": {
       "types": "./dist/browser/browser.d.ts",

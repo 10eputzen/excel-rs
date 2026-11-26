@@ -121,7 +121,10 @@ export function validateSchema(schema: unknown): asserts schema is Schema {
     if (r.type !== undefined && !TYPES.includes(r.type)) fail(`${key}.type must be one of ${TYPES.join(', ')}`);
     for (const bound of ['min', 'max'] as const) {
       const b = r[bound];
-      if (b !== undefined && !(typeof b === 'number' || b instanceof Date)) fail(`${key}.${bound} must be a number or Date`);
+      if (b === undefined) continue;
+      if ((r.type ?? 'string') === 'boolean') fail(`${key}.${bound} is not supported for boolean columns`);
+      const ok = r.type === 'date' ? b instanceof Date && !Number.isNaN(b.getTime()) : Number.isFinite(b);
+      if (!ok) fail(`${key}.${bound} must be a ${r.type === 'date' ? 'valid Date' : 'finite number'}`);
     }
     if (r.pattern !== undefined && !(r.pattern instanceof RegExp)) fail(`${key}.pattern must be a RegExp`);
     if (r.values !== undefined && !Array.isArray(r.values)) fail(`${key}.values must be an array`);
@@ -138,13 +141,15 @@ export function applySchema<S extends Schema>(rows: Cell[][], schema: S, maxErro
     else result.errorsTruncated = true;
   };
   const columns = findColumns(rows[0] ?? [], schema);
+  let missing = false;
   for (const [key, index] of columns) {
     const rule = schema[key]!;
     if (index === -1 && rule.required) {
+      missing = true;
       report({ row: 1, column: rule.header, code: 'MISSING_COLUMN', message: `Die Spalte „${rule.header}“ fehlt.` });
     }
   }
-  if (result.errors.length > 0) return result;
+  if (missing) return result;
 
   for (let r = 1; r < rows.length; r++) {
     const cells = rows[r]!;
@@ -155,7 +160,7 @@ export function applySchema<S extends Schema>(rows: Cell[][], schema: S, maxErro
     for (const [key, index] of columns) {
       const rule = schema[key]!;
       const cell = index === -1 ? null : (cells[index] ?? null);
-      const checked = checkCell(cell, rule);
+      const checked = checkCell(cell, rule, key);
       if ('value' in checked) {
         row[key] = checked.value;
       } else {
@@ -181,14 +186,14 @@ type Failure = { code: SchemaErrorCode; message: string };
 type Checked = { value: unknown } | Failure;
 
 /** The converted value, or the reason the cell is rejected. */
-function checkCell(cell: Cell, rule: AnyColumnRule): Checked {
+function checkCell(cell: Cell, rule: AnyColumnRule, key: string): Checked {
   const name = `„${rule.header}“`;
   if (isEmpty(cell)) {
     return rule.required ? fail('REQUIRED', `${name} darf nicht leer sein.`) : { value: null };
   }
   const type = rule.type ?? 'string';
   const value = convert(cell, type, rule.decimal ?? ',');
-  const shown = `„${shorten(cellText(cell))}“`;
+  const shown = `„${shorten(display(cell))}“`;
   if (value === undefined) return fail('INVALID_TYPE', `${name}: ${shown} ist ${NOT_A[type]}.`);
 
   const size = type === 'string' ? (value as string).length : (value as number | Date).valueOf();
@@ -208,13 +213,22 @@ function checkCell(cell: Cell, rule: AnyColumnRule): Checked {
   if (rule.values !== undefined) {
     const match = rule.values.find((a) => sameValue(a, value));
     if (match === undefined) {
-      const list = rule.values.slice(0, 10).map((a) => `„${String(a)}“`).join(', ');
+      const list = rule.values.slice(0, 10).map((a) => `„${display(a)}“`).join(', ');
       const more = rule.values.length > 10 ? ', …' : '';
       return fail('NOT_ALLOWED', `${name}: ${shown} ist nicht erlaubt (erlaubt: ${list}${more}).`);
     }
-    out = match;
+    // Text matches are returned as listed; a number listed for a text column stays text.
+    if (typeof match === typeof value) out = match;
   }
-  const custom = rule.validate?.(out as never);
+  let custom: unknown;
+  try {
+    custom = rule.validate?.(out as never);
+  } catch (err) {
+    // A failing check is a bug in the app, not in the file: abort with a clear error.
+    const e = new ExcelError('INVALID_INPUT', `schema: ${key}.validate threw: ${err instanceof Error ? err.message : String(err)}`);
+    (e as { cause?: unknown }).cause = err;
+    throw e;
+  }
   if (typeof custom === 'string' && custom !== '') return fail('CUSTOM', `${name}: ${custom}`);
   return { value: out };
 }
@@ -244,9 +258,16 @@ function convert(cell: Cell, type: ColumnType, decimal: ',' | '.'): unknown {
 }
 
 function sameValue(allowed: string | number | boolean, value: unknown): boolean {
-  if (typeof allowed === 'string' && typeof value === 'string') return allowed.toLowerCase() === value.toLowerCase();
-  if (value instanceof Date) return false;
+  if (typeof value === 'string') return String(allowed).toLowerCase() === value.toLowerCase();
   return allowed === value;
+}
+
+/** A value as the user knows it from the sheet: German numbers and dates. */
+function display(v: Cell): string {
+  if (typeof v === 'number') return formatNumber(v);
+  if (v instanceof Date) return formatDate(v);
+  if (typeof v === 'boolean') return v ? 'WAHR' : 'FALSCH';
+  return cellText(v);
 }
 
 function fail(code: SchemaErrorCode, message: string): Failure {

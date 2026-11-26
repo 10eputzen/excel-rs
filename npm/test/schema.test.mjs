@@ -138,3 +138,64 @@ test('invalid schema is rejected before reading', () => {
 test('read options still apply with a schema', () => {
   assert.throws(() => readSheet(csv('A\n1\n2\n3\n'), { schema: { a: { header: 'A' } }, maxRows: 2 }), { code: 'TOO_LARGE' });
 });
+
+test('edge cases of numbers and dates in text cells', () => {
+  const s = { n: { header: 'N', type: 'number' }, d: { header: 'D', type: 'date' } };
+  const res = readSheet(csv('N;D\n-1.234,5;31.12.99\n1 234 567;01.01.29\n+3;15.06.1960\n1 2 3;29.02.2023\n12 34;1.1.2000\n'), { schema: s });
+  assert.deepEqual(res.rows, [
+    { n: -1234.5, d: new Date(Date.UTC(1999, 11, 31)) },
+    { n: 1234567, d: new Date(Date.UTC(2029, 0, 1)) },
+    { n: 3, d: new Date(Date.UTC(1960, 5, 15)) },
+  ]);
+  assert.deepEqual(
+    res.errors.map((e) => e.cell),
+    ['A5', 'B5', 'A6'],
+  );
+});
+
+test('messages show typed values in German notation', () => {
+  const s = {
+    p: { header: 'Preis', type: 'number', max: 1000 },
+    d: { header: 'Datum', type: 'date', min: new Date(Date.UTC(2020, 0, 1)) },
+    c: { header: 'Code', values: [1, 2] },
+  };
+  const bytes = writeXlsx([
+    {
+      name: 'S',
+      columns: [{ header: 'Preis' }, { header: 'Datum' }, { header: 'Code' }],
+      rows: [[1234.5, new Date(Date.UTC(2019, 0, 1)), 1], [1, new Date(Date.UTC(2021, 0, 1)), 3]],
+    },
+  ]);
+  const res = readSheet(bytes, { schema: s });
+  assert.deepEqual(
+    res.errors.map((e) => e.message),
+    [
+      '„Preis“: „1234,5“ ist größer als 1000.',
+      '„Datum“: „01.01.2019“ liegt vor dem 01.01.2020.',
+      '„Code“: „3“ ist nicht erlaubt (erlaubt: „1“, „2“).',
+    ],
+  );
+});
+
+test('a missing column stops the read even with maxErrors 0', () => {
+  const res = readSheet(csv('Name\nA\nB\n'), { schema: { q: { header: 'Menge', required: true } }, maxErrors: 0 });
+  assert.deepEqual(res, { rows: [], errors: [], errorsTruncated: true, rowCount: 0 });
+});
+
+test('bounds must fit the column type', () => {
+  const bad = [
+    { a: { header: 'A', type: 'date', min: 2020 } },
+    { a: { header: 'A', type: 'number', max: Number.NaN } },
+    { a: { header: 'A', type: 'date', min: new Date('x') } },
+    { a: { header: 'A', type: 'boolean', min: 0 } },
+    { a: { header: 'A', type: 'number', min: new Date() } },
+  ];
+  for (const schema of bad) {
+    assert.throws(() => readSheet(csv('A\n1\n'), { schema }), { code: 'INVALID_INPUT' });
+  }
+});
+
+test('a throwing validate aborts with INVALID_INPUT', () => {
+  const schema = { a: { header: 'A', validate: () => { throw new Error('boom'); } } };
+  assert.throws(() => readSheet(csv('A\n1\n'), { schema }), { code: 'INVALID_INPUT', message: 'schema: a.validate threw: boom' });
+});

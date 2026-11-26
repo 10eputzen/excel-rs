@@ -1,5 +1,6 @@
 // Compile-time checks of the schema row types (npm run typecheck).
 import { readSheet } from '../src/lib/index';
+import type { Schema } from '../src/lib/index';
 const r = readSheet(new Uint8Array(), { schema: { a: { header: 'A', type: 'number', required: true }, b: { header: 'B', type: 'date' }, c: { header: 'C' } } });
 const a: number = r.rows[0]!.a;
 const b: Date | null = r.rows[0]!.b;
@@ -17,3 +18,8 @@ readSheet(new Uint8Array(), {
     qty: { header: 'Menge', type: 'integer', validate: (n) => (n > 0 ? undefined : 'muss positiv sein.') },
   },
 });
+
+// A schema in its own variable keeps literal types with `satisfies`.
+const orders = { qty: { header: 'Menge', type: 'integer', required: true } } satisfies Schema;
+const qty: number = readSheet(new Uint8Array(), { schema: orders }).rows[0]!.qty;
+void qty;

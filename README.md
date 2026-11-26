@@ -100,11 +100,23 @@ const { rows, errors, rowCount } = readSheet(bytes, {
 | `type` | Typed cells | Text cells (always in csv) |
 |---|---|---|
 | `string` (default) | numbers and dates as text | trimmed |
-| `number`, `integer` | number cells | `1.234,56` (`decimal: ','`, default) or `1,234.56` (`decimal: '.'`) |
+| `number`, `integer` | number cells | `1.234,56` or `1 234,56` (`decimal: ','`, default), `1,234.56` (`decimal: '.'`) |
 | `date` | date cells | `31.12.2025`, `31.12.25`, `2025-12-31`, each optionally with `14:30[:00]`; impossible dates fail |
 | `boolean` | boolean cells, 1/0 | `ja`/`nein`, `wahr`/`falsch`, `true`/`false`, `x` |
 
-`min`/`max` bound the value (numbers, dates) or the length (strings). `values` matches text ignoring case and returns the value as listed. `validate` runs last and returns a message (appended to the column name) to reject the value. An invalid schema throws `INVALID_INPUT` before the file is read.
+`min`/`max` bound the value (numbers; `Date` objects for dates) or the length (strings); invalid bounds throw `INVALID_INPUT`. `values` matches text ignoring case and returns the value as listed. `validate` runs last and returns a message (appended to the column name) to reject the value. An invalid schema throws `INVALID_INPUT` before the file is read, and so does a `validate` function that throws (that is a bug in the app, not in the file). Two-digit years follow Excel: `00`–`29` are 2000–2029, `30`–`99` are 1930–1999.
+
+Declare a schema in its own variable with `satisfies Schema`, so the column types stay literal and the row type is inferred:
+
+```ts
+import { readSheet, type Schema } from 'excel-rs';
+
+const orders = {
+  qty: { header: 'Menge', type: 'integer', required: true },
+} satisfies Schema;
+
+const { rows } = readSheet(bytes, { schema: orders }); // rows: { qty: number }[]
+```
 
 ## Checking files before upload
 

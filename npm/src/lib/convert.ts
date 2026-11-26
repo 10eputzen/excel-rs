@@ -24,7 +24,9 @@ export function toNumber(v: Cell, decimal: ',' | '.'): number | undefined {
   if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
   if (typeof v !== 'string') return undefined;
   const group = decimal === ',' ? '.' : ',';
-  const text = v.trim().replace(/[\s  ]/g, '');
+  // Spaces may group thousands ("1 234 567"); any other space makes it no number.
+  const text = v.trim().replace(/(\d)[ \u00a0\u202f](?=\d{3}(?!\d))/g, '$1');
+  if (/\s/.test(text)) return undefined;
   const [intPart, fraction, ...rest] = text.split(decimal);
   if (intPart === undefined || rest.length > 0) return undefined;
   const sign = /^[+-]/.test(intPart) ? intPart[0] : '';
@@ -42,8 +44,9 @@ const TIME = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/;
 
 /**
  * A date (UTC) from a date cell or from text: `31.12.2025`, `31.12.25`
- * (20xx), `2025-12-31`, each optionally followed by `HH:MM[:SS]` after a
- * space (or `T` for the ISO form). Impossible dates such as 31.02. fail.
+ * (00–29 → 20xx, else 19xx) or `2025-12-31`, each optionally followed by
+ * `HH:MM[:SS]` after a space (or `T` for the ISO form). Impossible dates
+ * such as 31.02. fail.
  */
 export function toDate(v: Cell): Date | undefined {
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? undefined : v;
@@ -55,7 +58,8 @@ export function toDate(v: Cell): Date | undefined {
   const iso = ISO_DATE.exec(datePart);
   if (german) {
     [d, m, y] = [Number(german[1]), Number(german[2]), Number(german[3])];
-    if (german[3]!.length === 2) y += 2000;
+    // Two-digit years as in Excel: 00–29 → 2000–2029, 30–99 → 1930–1999.
+    if (german[3]!.length === 2) y += y < 30 ? 2000 : 1900;
   } else if (iso) {
     [y, m, d] = [Number(iso[1]), Number(iso[2]), Number(iso[3])];
   } else {
