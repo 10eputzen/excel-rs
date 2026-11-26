@@ -261,6 +261,8 @@ cargo +nightly fuzz run read                                 # fuzzing, see fuzz
 cd npm/bench && npm install && npm run bench                 # benchmarks, updates the README table
 ```
 
+Releases: bump the version in `npm/package.json`, add the `CHANGELOG.md` entry, merge, then start the **Release** workflow. It publishes to npm with provenance and creates the tag and GitHub release.
+
 ## Contributing
 
 Issues and pull requests are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md). Please report security problems privately, see [SECURITY.md](SECURITY.md).
