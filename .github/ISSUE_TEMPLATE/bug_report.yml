@@ -1,0 +1,31 @@
+name: Bug report
+description: Something does not work as expected, or a file is read incorrectly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Security problems please report privately (Security → Report a vulnerability), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you call, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Code to reproduce
+      render: js
+  - type: input
+    id: version
+    attributes:
+      label: excel-rs version, Node version and operating system
+      placeholder: e.g. 0.3.0, Node 22 on Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: file
+    attributes:
+      label: Sample file
+      description: If a file is read incorrectly, attach it or a small copy that shows the problem, and name the program that saved it. Remove personal and confidential data first.
