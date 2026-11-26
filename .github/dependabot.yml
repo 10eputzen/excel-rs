@@ -15,10 +15,6 @@ updates:
       npm:
         patterns: ["*"]
     ignore:
-      # TypeScript 7 (native compiler) needs a migration of the build and
-      # tsconfig; do it on purpose, not as a weekly bump.
-      - dependency-name: typescript
-        update-types: ["version-update:semver-major"]
       # Types must match the oldest supported Node.js (engines: >=20).
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
