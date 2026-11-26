@@ -71,8 +71,7 @@ const SINGLE_COLUMN: u8 = 0x1F;
 /// A delimiter must occur in the first line (the header); without one the file
 /// has a single column, so `-0,01` in a German one-column file stays one cell.
 pub fn detect_delimiter(text: &str) -> u8 {
-    let lines: Vec<&str> = text
-        .lines()
+    let lines: Vec<&str> = logical_lines(text)
         .filter(|l| !l.trim().is_empty())
         .take(20)
         .collect();
@@ -94,6 +93,34 @@ pub fn detect_delimiter(text: &str) -> u8 {
         }
     }
     best.0
+}
+
+/// Lines of csv text, where a line break inside quotes (a cell with Alt+Enter
+/// in Excel) does not end the line.
+fn logical_lines(text: &str) -> impl Iterator<Item = &str> {
+    let bytes = text.as_bytes();
+    let mut start = 0;
+    let mut in_quotes = false;
+    let mut i = 0;
+    std::iter::from_fn(move || {
+        while i < bytes.len() {
+            let b = bytes[i];
+            i += 1;
+            if b == b'"' {
+                in_quotes = !in_quotes;
+            } else if b == b'\n' && !in_quotes {
+                let line = text[start..i - 1].trim_end_matches('\r');
+                start = i;
+                return Some(line);
+            }
+        }
+        if start < bytes.len() {
+            let line = &text[start..];
+            start = bytes.len();
+            return Some(line);
+        }
+        None
+    })
 }
 
 fn count_outside_quotes(line: &str, d: u8) -> usize {
@@ -247,6 +274,12 @@ mod tests {
         assert_eq!(detect_delimiter("a,b\n1,2\n"), b',');
         assert_eq!(detect_delimiter("a\tb\n1\t2\n"), b'\t');
         assert_eq!(detect_delimiter("\"a;b\",c\n1,2\n"), b',');
+        // A line break inside a quoted header cell does not end the header.
+        assert_eq!(detect_delimiter("\"Menge\n(Stk)\",Preis\n1,2\n"), b',');
+        assert_eq!(
+            detect_delimiter("\"Menge\r\n(Stk)\";Preis\r\n1;2\r\n"),
+            b';'
+        );
         // One column: the comma in a German decimal is no delimiter.
         assert_eq!(detect_delimiter("Betrag\n-0,01\n1.234,56\n"), SINGLE_COLUMN);
         let rows = read_csv(

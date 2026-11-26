@@ -10,7 +10,7 @@ use serde_json::json;
 fn text() -> impl Strategy<Value = String> {
     let chars = prop::sample::select(vec![
         'a', 'Z', '0', '7', ' ', 'ä', 'ö', 'ü', 'Ä', 'Ö', 'Ü', 'ß', '€', '§', '°', ';', ',', '"',
-        '\n', '\t', '.', '-', '\'', 'é',
+        '\n', '\r', '\t', '.', '-', '\'', 'é',
     ]);
     prop::collection::vec(chars, 0..12).prop_map(|v| v.into_iter().collect())
 }
@@ -85,7 +85,10 @@ fn csv_opts(sep: u8, encoding: CsvEncoding) -> ReadOptions {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(512))]
+    // PROPTEST_CASES raises the number of cases for a longer run.
+    #![proptest_config(ProptestConfig::with_cases(
+        std::env::var("PROPTEST_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(512)
+    ))]
 
     /// Every cell, blank row and row number survives a CSV round trip.
     #[test]
