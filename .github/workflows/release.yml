@@ -2,9 +2,8 @@ name: Release
 
 # Publishes the version in npm/package.json from main to npm (@10eputzen/excel-rs) with provenance
 # and creates the GitHub release with tag v<version>. Start it by hand
-# (workflow_dispatch) after the version bump is merged. The first publish uses
-# the NPM_TOKEN secret of environment `npm`; once trusted publishing is set up
-# on npmjs.com the secret can be removed and OIDC is used instead.
+# (workflow_dispatch) after the version bump is merged. npm authenticates the
+# job through trusted publishing (OIDC, environment `npm`); no token is stored.
 on:
   workflow_dispatch:
 
@@ -63,8 +62,6 @@ jobs:
       - name: npm with trusted publishing
         run: npm install -g npm@11.6.2
       - run: npm publish ./*excel-rs-*.tgz --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: GitHub release
         run: gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
         env:

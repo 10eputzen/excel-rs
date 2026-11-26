@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 – 2026-11-26
+
+- Published through npm trusted publishing (no stored token); README badges. No code changes.
+
 ## 0.3.0 – 2026-11-26
 
 - First npm release, as `@10eputzen/excel-rs` (npm does not accept the unscoped name). Imports change from `excel-rs` to `@10eputzen/excel-rs`; the API is unchanged.

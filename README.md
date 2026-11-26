@@ -1,5 +1,7 @@
 # excel-rs
 
+[![npm](https://img.shields.io/npm/v/@10eputzen/excel-rs)](https://www.npmjs.com/package/@10eputzen/excel-rs) [![CI](https://github.com/10eputzen/excel-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/10eputzen/excel-rs/actions/workflows/ci.yml) [![license](https://img.shields.io/npm/l/@10eputzen/excel-rs)](LICENSE)
+
 Fast, strict spreadsheet import and export for Node.js. Reads xlsx, xlsm, xls, xlsb, ods and csv, validates rows against a schema with messages for end users, and writes xlsx. A Rust core compiled to WebAssembly: one package that runs wherever Node.js runs (tested on Linux and Windows), no native binaries, no postinstall, no runtime dependencies.
 
 ```sh
