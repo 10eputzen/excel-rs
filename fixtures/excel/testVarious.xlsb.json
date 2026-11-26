@@ -1,0 +1,42 @@
+{
+  "sheetNames": ["mySheet1"],
+  "sheets": {
+    "mySheet1": [
+      ["String","This is a string",null,null,null],
+      ["integer",13.0,null,null,null],
+      ["float",13.1211231321,null,null,null],
+      ["currency",3.03,null,null,null],
+      ["percent",0.2,null,null,null],
+      ["float 2",13.12131231,null,null,null],
+      ["long int",123456789012345.0,null,null,null],
+      ["longer int",1234567890123450.0,null,null,null],
+      ["fraction",0.25,null,null,null],
+      ["date",{"d":1489017600000.0},null,null,null],
+      ["comment","contents",null,null,null],
+      ["hyperlink","tika_link",null,null,null],
+      ["formula",4.0,2.0,null,null],
+      ["formulaErr",null,null,null,null],
+      ["formulaFloat",0.5,null,"March","April"],
+      ["customFormat1","   46/1963","merchant1",1.0,3.0],
+      ["customFormat2","  3/128","merchant2",2.0,4.0],
+      [null,null,null,null,null],
+      [null,null,null,null,null],
+      [null,null,null,null,null],
+      [null,null,"text test",null,null],
+      [null,null,null,null,null],
+      [null,null,null,null,null],
+      [null,null,null,null,null],
+      [null,null,null,null,null],
+      [null,null,null,null,null],
+      [null,null,null,null,null],
+      [null,null,null,null,null],
+      [null,null,null,null,null],
+      [null,"the",null,null,null],
+      [null,null,null,null,null],
+      [null,null,null,null,null],
+      [null,"the",null,"quick",null],
+      [null,null,null,null,null],
+      [null,"comment6",null,null,null]
+    ]
+  }
+}

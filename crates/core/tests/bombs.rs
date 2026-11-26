@@ -290,3 +290,33 @@ fn ods_invalid_or_duplicate_repeat_attribute() {
     );
     assert_too_large(&bytes, &ReadOptions::default());
 }
+
+#[test]
+fn files_found_by_fuzzing_fail_fast() {
+    use excel_rs_core::Format;
+    // An OLE container with a cyclic sector chain, read as xlsx: calamine's
+    // own OLE reader allocated 4 GiB for it.
+    let bytes = fixture("broken/ole-sector-cycle.xlsx");
+    for format in [
+        Some(Format::Xlsx),
+        Some(Format::Xlsb),
+        Some(Format::Ods),
+        None,
+    ] {
+        let opts = ReadOptions {
+            format,
+            ..Default::default()
+        };
+        let err = read_sheet(&bytes, &opts).unwrap_err();
+        assert!(
+            matches!(err.code, ErrorCode::CorruptFile | ErrorCode::TooLarge),
+            "{format:?}: {err:?}"
+        );
+    }
+    let err = read_sheet(
+        &fixture("broken/xlsb-missing-relationship.xlsb"),
+        &ReadOptions::default(),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::CorruptFile);
+}

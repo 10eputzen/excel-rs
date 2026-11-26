@@ -1,28 +1,64 @@
 # excel-rs
 
-Fast spreadsheet import and export for Node.js.
-
-- **Read** xlsx, xlsm, xls, xlsb, ods and csv
-- **Validate** rows against a schema, with error messages in German
-- **Write** xlsx with a bold, frozen, filterable header row and column formats
-- **Check before upload** in the browser with a tiny entry (under 2 KB gzip, no WebAssembly)
-- Rust core ([calamine](https://github.com/tafia/calamine), [rust_xlsxwriter](https://github.com/jmcnamara/rust_xlsxwriter), [csv](https://github.com/BurntSushi/rust-csv), [encoding_rs](https://github.com/hsivonen/encoding_rs)) compiled to WebAssembly
-- **Zero runtime dependencies**, one platform-independent package (no native binaries, no postinstall)
-- Typed errors with stable codes and limits against oversized or malicious files
+Fast, strict spreadsheet import and export for Node.js. Reads xlsx, xlsm, xls, xlsb, ods and csv, validates rows against a schema with German error messages, and writes xlsx. A Rust core compiled to WebAssembly: one package that runs wherever Node.js runs (tested on Linux and Windows), no native binaries, no postinstall, no runtime dependencies.
 
 ```sh
 npm install excel-rs
 ```
 
-Requires Node.js 20 or newer. Works in serverless environments that run Node.js.
+```ts
+import { readSheet } from 'excel-rs';
+
+const { rows, errors } = readSheet(bytes, {
+  schema: {
+    name: { header: 'Name', required: true },
+    qty: { header: 'Menge', type: 'integer', min: 1 },
+    due: { header: 'Fällig am', type: 'date' },
+  },
+});
+// rows:   [{ name: 'Schraube', qty: 1200, due: 2025-12-31T00:00:00.000Z }, …]
+// errors: [{ row: 7, cell: 'B7', code: 'INVALID_TYPE', message: '„Menge“: „abc“ ist keine ganze Zahl.' }]
+```
+
+## Why excel-rs
+
+- **Fast.** Reads xlsx 4–6× faster than SheetJS and exceljs, csv more than 10× faster, and writes xlsx faster too, see [Benchmarks](#benchmarks).
+- **Made for German files.** `;` csv in Windows-1252 from Excel, `1.234,56`, `31.12.2025`, `ja`/`nein`, umlauts everywhere, error messages for end users in German.
+- **Safe for uploads from strangers.** Limits for size, rows and cells are checked before memory is allocated; zip bombs, cyclic OLE files and parser crashes end in a typed `ExcelError`, never in a crashed process. Fuzzed weekly.
+- **Exact row numbers.** Errors and valid rows carry the row number Excel shows, also for csv files with blank lines.
+- **Small surface.** Two functions, `readSheet` and `writeXlsx`, plus a 2 KB browser check before the upload.
 
 | Entry | Use | API |
 |---|---|---|
-| `excel-rs` | Node.js (CommonJS and ESM) | synchronous |
+| `excel-rs` | Node.js 20+ (CommonJS and ESM), also serverless | synchronous |
 | `excel-rs/detect` | browsers: check a file before uploading it | pure TypeScript, under 2 KB gzip |
 | `excel-rs/browser` | deprecated, see [Browser](#browser-deprecated) | `async`, loads 0.8 MB of WebAssembly |
 
 The intended setup for web apps: the browser checks the file with `excel-rs/detect` and uploads it; the server reads it with `readSheet` and a schema, shows the user a preview with the errors, and writes only after confirmation.
+
+## Benchmarks
+
+<!-- bench:start -->
+| Library | Read xlsx | Read csv (;) | Write xlsx | Peak memory (xlsx read) |
+| --- | ---: | ---: | ---: | ---: |
+| **excel-rs** | 570 ms | 210 ms | 1,559 ms | 528 MB |
+| SheetJS 0.20.3 | 3,656 ms (6.4×) | 2,691 ms (12.8×) | 2,667 ms (1.7×) | 787 MB |
+| xlsx 0.18.5 (npm) | 2,903 ms (5.1×) | 2,641 ms (12.6×) | 2,638 ms (1.7×) | 768 MB |
+| exceljs 4.4.0 | 2,513 ms (4.4×) | 40,853 ms (194.2×) | 5,259 ms (3.4×) | 1597 MB |
+| read-excel-file 9.3.14 | 1,239 ms (2.2×) | – | – | 614 MB |
+
+100,000 rows × 10 columns (text with umlauts, numbers, booleans, dates). Median of 5 runs after a warm-up, each library in its own process; (n×) = slower than excel-rs by that factor. Node 22.23.5, Intel(R) Xeon(R) Processor @ 2.30GHz, 2026-11-26.
+<!-- bench:end -->
+
+Details and how to run it: [docs/benchmarks.md](docs/benchmarks.md). The CI fails if excel-rs reads xlsx less than 2× faster than SheetJS, or if the WebAssembly binary grows beyond 900 KB gzip.
+
+## How it is tested
+
+- **Files saved by Microsoft Excel** (xlsx, xls, xlsb; Windows, Mac and Online) with the expected result of every sheet as golden file, cross-checked against SheetJS ([fixtures/excel](fixtures/excel/SOURCES.md)). Plus reference files from LibreOffice and SheetJS with German content.
+- **Property tests** with thousands of random sheets: umlauts, `ß`, `€`, `;` and quotes inside cells, line breaks, blank rows, LF and CRLF, Windows-1252, German numbers and dates must survive a round trip.
+- **Fuzzing** of the reader and writer with cargo-fuzz, weekly in CI. Every crash found becomes a regression test ([fixtures/broken](fixtures/broken/README.md)).
+- **Malicious files**: zip bombs, far-away cells, huge record counts, truncated and corrupted files.
+- **CI on Linux and Windows**, Node.js 20, 22 and 24, plus a browser test in Chromium.
 
 ## Reading
 
@@ -64,8 +100,9 @@ Invalid option values throw `INVALID_INPUT`. The row and cell limits are enforce
 
 CSV files exported by spreadsheet programs in many European locales use `;` as delimiter and Windows-1252 as encoding. With the default options both are detected:
 
-- UTF-8 and UTF-16 byte order marks are removed; text that is not valid UTF-8 is decoded as Windows-1252.
-- The delimiter is the candidate (`;`, `,`, tab, `|`) that appears most consistently in the first lines, ignoring quoted text.
+- UTF-8 and UTF-16 byte order marks are removed; text that is not valid UTF-8 is decoded as Windows-1252. A few rare letter pairs are valid in both (`Ä€` is also UTF-8 for `Ā`); pass `encoding: 'windows-1252'` when you know the source.
+- The delimiter is the candidate (`;`, `,`, tab, `|`) that appears most consistently in the first lines, ignoring quoted text. It must occur in the first line: a file whose header has none is read as a single column, so `-0,01` stays one cell.
+- Blank lines are kept as empty rows, like Excel shows them, so row numbers match.
 
 CSV cells are always strings (or `null` when empty). Number and date formats in CSV depend on the locale of the exporting program, so the conversion is left to you.
 
@@ -74,7 +111,7 @@ CSV cells are always strings (or `null` when empty). Number and date formats in 
 ```ts
 import { readSheet } from 'excel-rs';
 
-const { rows, errors, rowCount } = readSheet(bytes, {
+const { rows, rowNumbers, errors, rowCount } = readSheet(bytes, {
   schema: {
     name: { header: 'Name', required: true, max: 80 },
     qty: { header: 'Menge', aliases: ['Anzahl', 'Stück'], type: 'integer', required: true, min: 1 },
@@ -95,6 +132,7 @@ const { rows, errors, rowCount } = readSheet(bytes, {
 - A missing `required` column is reported as `MISSING_COLUMN` (row 1) and no rows are read.
 - `rows` holds the rows without errors, as objects keyed like the schema, with values converted to the column `type`. Empty optional cells are `null`. Completely empty rows are skipped.
 - `errors` holds one entry per rejected cell, with the row number as Excel shows it (header = row 1), the cell address and a German message for the user. Codes: `MISSING_COLUMN`, `REQUIRED`, `INVALID_TYPE`, `BELOW_MIN`, `ABOVE_MAX`, `PATTERN`, `NOT_ALLOWED`, `CUSTOM`. At most `maxErrors` (default 1,000) are collected; `errorsTruncated` tells if there were more.
+- `rowNumbers[i]` is the Excel row number of `rows[i]` (the header is row 1), e.g. for a message like „steht schon in Zeile 7“ after a duplicate check.
 - `rowCount` is the number of data rows, valid or not.
 
 | `type` | Typed cells | Text cells (always in csv) |
@@ -199,10 +237,12 @@ try {
 
 ## Known limitations
 
-- xlsb files that use compact cell records (written by some third-party tools) lose most cell values. Files written by Excel are expected to work but are not yet covered by the test suite.
+- xlsb files that use compact cell records (written by some third-party tools, not by Excel) lose most cell values.
+- Password-protected files are not supported (`CORRUPT_FILE`).
+- Numbers are written with 15 significant digits, like Excel keeps them.
 - No formulas, styles beyond the header row, images or charts when writing.
 - The whole file is held in memory.
-- Tested with files written by LibreOffice, SheetJS and this package. Files from Excel and Google Sheets are not yet part of the test suite.
+- Files from Google Sheets are not yet part of the test suite.
 
 ## Development
 
@@ -215,6 +255,17 @@ npm run test:browser   # Chromium via Playwright
 ```
 
 `npm run fixtures` regenerates the reference files in `fixtures/` (needs LibreOffice).
+
+```sh
+UPDATE_GOLDEN=1 cargo test -p excel-rs-core --test golden   # after an intended change; review the diff
+PROPTEST_CASES=20000 cargo test --release --test properties  # longer property run
+cargo +nightly fuzz run read                                 # fuzzing, see fuzz/; seed with fuzz/seed-corpus.sh
+cd npm/bench && npm install && npm run bench                 # benchmarks, updates the README table
+```
+
+## Built on
+
+[calamine](https://github.com/tafia/calamine), [rust_xlsxwriter](https://github.com/jmcnamara/rust_xlsxwriter), [csv](https://github.com/BurntSushi/rust-csv) and [encoding_rs](https://github.com/hsivonen/encoding_rs).
 
 ## License
 

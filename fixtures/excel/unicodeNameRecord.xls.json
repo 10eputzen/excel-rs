@@ -1,0 +1,13 @@
+{
+  "sheetNames": ["Sheet1","Sheet2","Sheet3"],
+  "sheets": {
+    "Sheet1": [
+      ["あ","b"],
+      ["あ","a"],
+      ["い","b"],
+      ["う","c"]
+    ],
+    "Sheet2": [],
+    "Sheet3": []
+  }
+}

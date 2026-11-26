@@ -63,14 +63,19 @@ fn utf8(bytes: &[u8], encoding: CsvEncoding) -> Result<String> {
 
 const CANDIDATES: [u8; 4] = *b";,\t|";
 
+/// Used when the first line has no delimiter: the file has a single column.
+/// The ASCII unit separator does not occur in real csv files, so no cell is split.
+const SINGLE_COLUMN: u8 = 0x1F;
+
 /// Picks the delimiter that appears most consistently in the first lines.
+/// A delimiter must occur in the first line (the header); without one the file
+/// has a single column, so `-0,01` in a German one-column file stays one cell.
 pub fn detect_delimiter(text: &str) -> u8 {
-    let lines: Vec<&str> = text
-        .lines()
+    let lines: Vec<&str> = logical_lines(text)
         .filter(|l| !l.trim().is_empty())
         .take(20)
         .collect();
-    let mut best = (b',', 0usize, false);
+    let mut best = (SINGLE_COLUMN, 0usize, false);
     for &d in &CANDIDATES {
         let counts: Vec<usize> = lines.iter().map(|l| count_outside_quotes(l, d)).collect();
         let first = counts.first().copied().unwrap_or(0);
@@ -88,6 +93,34 @@ pub fn detect_delimiter(text: &str) -> u8 {
         }
     }
     best.0
+}
+
+/// Lines of csv text, where a line break inside quotes (a cell with Alt+Enter
+/// in Excel) does not end the line.
+fn logical_lines(text: &str) -> impl Iterator<Item = &str> {
+    let bytes = text.as_bytes();
+    let mut start = 0;
+    let mut in_quotes = false;
+    let mut i = 0;
+    std::iter::from_fn(move || {
+        while i < bytes.len() {
+            let b = bytes[i];
+            i += 1;
+            if b == b'"' {
+                in_quotes = !in_quotes;
+            } else if b == b'\n' && !in_quotes {
+                let line = text[start..i - 1].trim_end_matches('\r');
+                start = i;
+                return Some(line);
+            }
+        }
+        if start < bytes.len() {
+            let line = &text[start..];
+            start = bytes.len();
+            return Some(line);
+        }
+        None
+    })
 }
 
 fn count_outside_quotes(line: &str, d: u8) -> usize {
@@ -119,28 +152,26 @@ pub fn read_csv(
         .from_reader(text.as_bytes());
     let mut rows: Vec<Vec<Value>> = Vec::new();
     let mut width = 0usize;
-    for record in reader.records() {
-        let record = record.map_err(Error::corrupt)?;
-        if rows.len() >= max_rows {
-            return Err(Error::too_large(format!("more than {max_rows} rows")));
+    let mut record = csv::StringRecord::new();
+    while reader.read_record(&mut record).map_err(Error::corrupt)? {
+        // The csv parser skips blank lines; Excel shows them as empty rows.
+        // Keep them, so row numbers match what the user sees in Excel.
+        let start = record.position().map_or(0, |p| p.byte());
+        let blank_lines = skipped_blank_lines(text.as_bytes(), start);
+        for _ in 0..blank_lines {
+            push_row(&mut rows, Vec::new(), &mut width, max_rows, max_cells)?;
         }
-        // The result is padded to rows × widest row, so that is what counts.
-        width = width.max(record.len());
-        if (rows.len() + 1).saturating_mul(width) > max_cells {
-            return Err(Error::too_large(format!("more than {max_cells} cells")));
-        }
-        rows.push(
-            record
-                .iter()
-                .map(|f| {
-                    if f.is_empty() {
-                        Value::Empty
-                    } else {
-                        Value::String(f.to_owned())
-                    }
-                })
-                .collect(),
-        );
+        let cells = record
+            .iter()
+            .map(|f| {
+                if f.is_empty() {
+                    Value::Empty
+                } else {
+                    Value::String(f.to_owned())
+                }
+            })
+            .collect();
+        push_row(&mut rows, cells, &mut width, max_rows, max_cells)?;
     }
     // Drop trailing empty lines, then pad to a rectangle.
     while rows
@@ -153,6 +184,51 @@ pub fn read_csv(
         row.resize(width, Value::Empty);
     }
     Ok(rows)
+}
+
+/// Number of blank lines the parser skipped before the record that it reports
+/// at byte `start`. The reported start can lie before the previous record's
+/// line break (after a quoted field) or after it; both are handled.
+fn skipped_blank_lines(text: &[u8], start: u64) -> usize {
+    let start = usize::try_from(start).unwrap_or(usize::MAX).min(text.len());
+    let mut i = start;
+    // A start between the `\r` and `\n` of the previous line break.
+    if start > 0 && text[start - 1] == b'\r' && text.get(start) == Some(&b'\n') {
+        i += 1;
+    }
+    let mut breaks = 0usize;
+    while i < text.len() && (text[i] == b'\n' || text[i] == b'\r') {
+        if text[i] == b'\r' && text.get(i + 1) == Some(&b'\n') {
+            i += 1;
+        }
+        i += 1;
+        breaks += 1;
+    }
+    let after_break = start == 0 || matches!(text[start - 1], b'\n' | b'\r');
+    if after_break {
+        breaks
+    } else {
+        breaks.saturating_sub(1)
+    }
+}
+
+fn push_row(
+    rows: &mut Vec<Vec<Value>>,
+    row: Vec<Value>,
+    width: &mut usize,
+    max_rows: usize,
+    max_cells: usize,
+) -> Result<()> {
+    if rows.len() >= max_rows {
+        return Err(Error::too_large(format!("more than {max_rows} rows")));
+    }
+    // The result is padded to rows × widest row, so that is what counts.
+    *width = (*width).max(row.len());
+    if (rows.len() + 1).saturating_mul(*width) > max_cells {
+        return Err(Error::too_large(format!("more than {max_cells} cells")));
+    }
+    rows.push(row);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -198,6 +274,29 @@ mod tests {
         assert_eq!(detect_delimiter("a,b\n1,2\n"), b',');
         assert_eq!(detect_delimiter("a\tb\n1\t2\n"), b'\t');
         assert_eq!(detect_delimiter("\"a;b\",c\n1,2\n"), b',');
+        // A line break inside a quoted header cell does not end the header.
+        assert_eq!(detect_delimiter("\"Menge\n(Stk)\",Preis\n1,2\n"), b',');
+        assert_eq!(
+            detect_delimiter("\"Menge\r\n(Stk)\";Preis\r\n1;2\r\n"),
+            b';'
+        );
+        // One column: the comma in a German decimal is no delimiter.
+        assert_eq!(detect_delimiter("Betrag\n-0,01\n1.234,56\n"), SINGLE_COLUMN);
+        let rows = read_csv(
+            b"Betrag\r\n-0,01\r\n\"a;b\"\r\n",
+            &CsvOptions::default(),
+            10,
+            100,
+        )
+        .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                vec![Value::String("Betrag".into())],
+                vec![Value::String("-0,01".into())],
+                vec![Value::String("a;b".into())],
+            ]
+        );
     }
 
     #[test]
@@ -220,5 +319,25 @@ mod tests {
     fn row_limit() {
         let err = read_csv(b"1\n2\n3\n", &CsvOptions::default(), 2, 100).unwrap_err();
         assert_eq!(err.code, crate::ErrorCode::TooLarge);
+    }
+
+    #[test]
+    fn blank_lines_are_kept_as_empty_rows() {
+        let opts = CsvOptions::default();
+        let text = "a;b\n1;2\n\n\n3;\"x\ny\"\r\n\r\n4;5\n\n";
+        let rows = read_csv(text.as_bytes(), &opts, 100, 1000).unwrap();
+        let s = |v: &str| Value::String(v.into());
+        assert_eq!(
+            rows,
+            vec![
+                vec![s("a"), s("b")],
+                vec![s("1"), s("2")],
+                vec![Value::Empty, Value::Empty],
+                vec![Value::Empty, Value::Empty],
+                vec![s("3"), s("x\ny")],
+                vec![Value::Empty, Value::Empty],
+                vec![s("4"), s("5")],
+            ]
+        );
     }
 }

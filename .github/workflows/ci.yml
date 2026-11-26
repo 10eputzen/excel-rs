@@ -16,7 +16,11 @@ env:
 jobs:
   rust:
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,6 +32,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo fmt --all --check
+        if: runner.os == 'Linux'
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo clippy -p excel-rs-wasm --target wasm32-unknown-unknown --locked -- -D warnings
       - run: cargo test --locked
@@ -44,10 +49,15 @@ jobs:
 
   node:
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         node: [20, 22, 24]
+        include:
+          - os: windows-latest
+            node: 22
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -74,11 +84,12 @@ jobs:
       - working-directory: npm
         run: npm test
       - name: Browser test (Chromium)
-        if: matrix.node == 22
+        if: matrix.node == 22 && runner.os == 'Linux'
         working-directory: npm
         run: |
           npx playwright install --with-deps chromium
           npm run test:browser
       - name: Check package contents
+        if: runner.os == 'Linux'
         working-directory: npm
         run: npm pack --dry-run

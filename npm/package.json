@@ -1,6 +1,6 @@
 {
   "name": "excel-rs",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Fast spreadsheet import/export for Node.js: read xlsx, xls, xlsb, ods and csv with schema validation, write xlsx. Rust core compiled to WebAssembly, zero runtime dependencies.",
   "license": "MIT",
   "repository": {
@@ -66,13 +66,14 @@
     "build:ts": "node scripts/build-ts.mjs",
     "build": "npm run build:wasm && npm run build:ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.browser.json --noEmit && tsc -p tsconfig.test.json",
-    "test": "node --test test/read.test.mjs test/write.test.mjs test/robustness.test.mjs test/performance.test.mjs test/browser-entry.test.mjs test/schema.test.mjs test/detect.test.mjs",
+    "test": "node --test test/read.test.mjs test/write.test.mjs test/robustness.test.mjs test/performance.test.mjs test/browser-entry.test.mjs test/schema.test.mjs test/detect.test.mjs test/properties.test.mjs test/golden.test.mjs",
     "prepack": "node -e \"require('fs').copyFileSync('../README.md','README.md')\"",
     "fixtures": "node scripts/make-fixtures.mjs",
     "test:browser": "node --test test/browser.e2e.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "fast-check": "^4.11.0",
     "playwright": "1.63.0",
     "typescript": "^5.6.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"

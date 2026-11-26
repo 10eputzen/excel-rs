@@ -1,0 +1,30 @@
+{
+  "sheetNames": ["Simple Monthly Budget"],
+  "sheets": {
+    "Simple Monthly Budget": [
+      ["SIMPLE MONTHLY BUDGET",null,null,null,null,null,null,null],
+      [null,null,null,null,null,null,null,null],
+      [null,"MONTHLY INCOME",null,null,"PERCENTAGE OF INCOME SPENT",null,null,null],
+      [null,"Item","Amount",null,2336.0,null,null,0.6229333333333333],
+      [null,"Income 1",2500.0,null,null,null,null,null],
+      [null,"Income 2",1000.0,null,null,null,null,null],
+      [null,"Other",250.0,null,"SUMMARY",null,null,null],
+      [null,null,null,null,"Total Monthly Income","Total Monthly Expenses","Balance",null],
+      [null,"MONTHLY EXPENSES",null,null,3750.0,2336.0,1414.0,null],
+      [null,"Item","Amount",null,null,null,null,null],
+      [null,"Rent/mortgage",800.0,null,null,null,null,null],
+      [null,"Electric",120.0,null,null,null,null,null],
+      [null,"Gas",50.0,null,null,null,null,null],
+      [null,"Cell phone",45.0,null,null,null,null,null],
+      [null,"Groceries",500.0,null,null,null,null,null],
+      [null,"Car payment",273.0,null,null,null,null,null],
+      [null,"Auto expenses",120.0,null,null,null,null,null],
+      [null,"Student loans",50.0,null,null,null,null,null],
+      [null,"Credit cards",100.0,null,null,null,null,null],
+      [null,"Auto Insurance",78.0,null,null,null,null,null],
+      [null,"Personal care",50.0,null,null,null,null,null],
+      [null,"Entertainment",100.0,null,null,null,null,null],
+      [null,"Miscellaneous",50.0,null,null,null,null,null]
+    ]
+  }
+}

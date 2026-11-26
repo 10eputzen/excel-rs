@@ -7,7 +7,11 @@ import { lib, fixture, fixturesDir } from './helpers.mjs';
 const common = createRequire(import.meta.url)('../dist/node/common.js');
 
 const { readSheet, writeXlsx, ExcelError } = lib;
-const files = readdirSync(fixturesDir);
+const spreadsheet = /\.(xlsx|xls|xlsb|ods|csv)$/;
+const files = [
+  ...readdirSync(fixturesDir).filter((f) => spreadsheet.test(f)),
+  ...readdirSync(`${fixturesDir}/excel`).filter((f) => spreadsheet.test(f)).map((f) => `excel/${f}`),
+];
 
 /** Reading must either succeed or throw an ExcelError, never anything else. */
 const readSafely = (bytes) => {
@@ -106,5 +110,15 @@ test('a large read does not break the next call', () => {
   const rows = Array.from({ length: 200_000 }, (_, i) => [i, 'text', i * 2, 'more text', i]);
   readSheet(writeXlsx([{ name: 'S', columns: [], rows }]));
   // The next call still works on a fresh instance.
+  assert.deepEqual(readSheet(fixture('utf8-bom.csv')).rows[0], ['a', 'b']);
+});
+
+test('files that crash a parser (found by fuzzing) fail with CORRUPT_FILE', () => {
+  for (const file of readdirSync(`${fixturesDir}/broken`).filter((f) => !f.endsWith('.md'))) {
+    const bytes = fixture(`broken/${file}`);
+    for (const format of ['auto', file.split('.').pop()]) {
+      assert.throws(() => readSheet(bytes, { format }), (e) => ['CORRUPT_FILE', 'TOO_LARGE'].includes(e.code), `${file} as ${format}`);
+    }
+  }
   assert.deepEqual(readSheet(fixture('utf8-bom.csv')).rows[0], ['a', 'b']);
 });

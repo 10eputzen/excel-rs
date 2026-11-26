@@ -85,6 +85,11 @@ export interface SchemaError {
 export interface SchemaResult<S extends Schema> {
   /** Rows without errors, in file order. Completely empty rows are skipped. */
   rows: SchemaRow<S>[];
+  /**
+   * Excel row number of each entry in `rows` (same index; the header is row 1).
+   * Use it to point at a row, e.g. for duplicates found after the read.
+   */
+  rowNumbers: number[];
   /** At most `maxErrors` errors, in file order. */
   errors: SchemaError[];
   /** True when more errors were found than `errors` holds. */
@@ -135,7 +140,7 @@ export function validateSchema(schema: unknown): asserts schema is Schema {
 
 /** Applies a validated schema to sheet rows (first row = header). */
 export function applySchema<S extends Schema>(rows: Cell[][], schema: S, maxErrors: number): SchemaResult<S> {
-  const result: SchemaResult<S> = { rows: [], errors: [], errorsTruncated: false, rowCount: 0 };
+  const result: SchemaResult<S> = { rows: [], rowNumbers: [], errors: [], errorsTruncated: false, rowCount: 0 };
   const report = (e: SchemaError) => {
     if (result.errors.length < maxErrors) result.errors.push(e);
     else result.errorsTruncated = true;
@@ -168,7 +173,10 @@ export function applySchema<S extends Schema>(rows: Cell[][], schema: S, maxErro
         report({ row: r + 1, column: rule.header, cell: `${columnLetter(index)}${r + 1}`, ...checked });
       }
     }
-    if (ok) result.rows.push(row as SchemaRow<S>);
+    if (ok) {
+      result.rows.push(row as SchemaRow<S>);
+      result.rowNumbers.push(r + 1);
+    }
   }
   return result;
 }

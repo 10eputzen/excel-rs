@@ -1,0 +1,15 @@
+{
+  "name": "excel-rs-bench",
+  "private": true,
+  "description": "Benchmark of excel-rs against other spreadsheet libraries. Not part of the package.",
+  "type": "module",
+  "scripts": {
+    "bench": "node bench.mjs"
+  },
+  "devDependencies": {
+    "exceljs": "4.4.0",
+    "read-excel-file": "9.3.14",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "xlsx-npm": "npm:xlsx@0.18.5"
+  }
+}

@@ -22,7 +22,22 @@ pub fn read_sheet(bytes: &[u8], opts_json: &str) -> Result<String, JsValue> {
 /// Writes an xlsx workbook from the serialized sheet list.
 #[wasm_bindgen(js_name = writeXlsx)]
 pub fn write_xlsx(sheets_json: &str) -> Result<Vec<u8>, JsValue> {
+    // The parsed JSON and the workbook take about 10× the JSON text.
+    reserve_heap(sheets_json.len().saturating_mul(12));
     write_xlsx_json(sheets_json).map_err(|e| JsValue::from_str(&e.to_json()))
+}
+
+/// Grows the heap once to about `bytes` by allocating and freeing a block;
+/// the allocator keeps the freed block and serves later allocations from it.
+/// Without this, the heap grows in many small steps, and every growth of the
+/// WebAssembly memory makes V8 run a full garbage collection of the
+/// JavaScript heap, which for a large `rows` array costs seconds.
+/// A failed reservation is ignored: the call then grows the heap as usual.
+fn reserve_heap(bytes: usize) {
+    let mut block: Vec<u8> = Vec::new();
+    if block.try_reserve_exact(bytes.min(1 << 30)).is_ok() {
+        drop(std::hint::black_box(block));
+    }
 }
 
 /// Current size of the WebAssembly memory in bytes. The wrapper drops the
