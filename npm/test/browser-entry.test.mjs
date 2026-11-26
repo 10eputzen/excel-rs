@@ -3,12 +3,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { fixture, lib, plain } from './helpers.mjs';
 
 const pkg = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const browser = await import(path.join(pkg, 'dist/browser/browser.js'));
+// A file URL: on Windows, import() does not accept a drive-letter path.
+const browser = await import(pathToFileURL(path.join(pkg, 'dist/browser/browser.js')).href);
 const wasmBytes = readFileSync(path.join(pkg, 'wasm/web/excel_rs_wasm_bg.wasm'));
 
 test('initExcel can be called repeatedly and concurrently', async () => {
