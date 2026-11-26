@@ -208,6 +208,33 @@ fn xls_cyclic_directory_chain() {
 }
 
 #[test]
+fn xls_fat_sector_listed_twice() {
+    // Repeating FAT sectors in the DIFAT would multiply calamine's FAT table.
+    let mut bytes = xls(1, &[number(0, 0)]);
+    let first = bytes[76..80].to_vec();
+    bytes[80..84].copy_from_slice(&first);
+    let err = read_sheet(&bytes, &ReadOptions::default()).unwrap_err();
+    assert_eq!(err.code, ErrorCode::CorruptFile, "{}", err.message);
+}
+
+#[test]
+fn xls_unreadable_workbook_does_not_fall_back_to_book() {
+    let stream = xls_stream(1, &[number(0, 0)]);
+    let mut bytes = compound(&[("/Workbook", &stream), ("/Book", &stream)]);
+    let name: Vec<u8> = "Workbook"
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    let entry = bytes
+        .windows(name.len())
+        .position(|w| w == name.as_slice())
+        .unwrap();
+    bytes[entry + 116..entry + 120].copy_from_slice(&0xFFFF_FF00u32.to_le_bytes());
+    let err = read_sheet(&bytes, &ReadOptions::default()).unwrap_err();
+    assert_eq!(err.code, ErrorCode::CorruptFile, "{}", err.message);
+}
+
+#[test]
 fn xls_sheet_listed_many_times() {
     // 2,000 × 100 cells is fine once, but 100 BoundSheet8 entries point at it.
     let bytes = xls(100, &[number(0, 0), number(1_999, 99)]);

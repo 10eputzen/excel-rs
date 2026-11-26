@@ -30,8 +30,13 @@ impl From<std::io::Error> for OleError {
 pub fn workbook_stream(bytes: &[u8]) -> Result<Vec<u8>> {
     let mut reader = Cursor::new(bytes);
     let mut cfb = Cfb::new(&mut reader, bytes.len())?;
-    cfb.get_stream("Workbook", &mut reader)
-        .or_else(|_| cfb.get_stream("Book", &mut reader))
+    // calamine falls back to Book on any error. Here only a missing Workbook
+    // falls back: where this port fails on a Workbook stream that calamine
+    // would still read, checking Book instead would check the wrong bytes.
+    match cfb.get_stream("Workbook", &mut reader)? {
+        Some(stream) => Ok(stream),
+        None => cfb.get_stream("Book", &mut reader)?.ok_or(OleError),
+    }
 }
 
 struct Cfb {
@@ -49,11 +54,17 @@ impl Cfb {
         let maxid = len / sector_size;
         let mut sectors = Sectors::new(sector_size, Vec::new(), maxid as u32);
 
+        // Each DIFAT and FAT sector is used once in a valid file. Repeating one
+        // multiplies the FAT calamine builds (gigabytes from a small file).
+        let mut used = std::collections::HashSet::new();
         let mut sector_id = h.difat_start;
         let mut difat_sectors = 0usize;
         while sector_id < RESERVED_SECTORS {
             difat_sectors += 1;
             if difat_sectors > maxid.saturating_add(1) {
+                return Err(OleError);
+            }
+            if !used.insert(sector_id) {
                 return Err(OleError);
             }
             difat.extend(to_u32(sectors.get(sector_id, reader)?)?);
@@ -62,6 +73,9 @@ impl Cfb {
 
         let mut fats = Vec::new();
         for id in difat.into_iter().filter(|id| *id < DIFSECT) {
+            if !used.insert(id) {
+                return Err(OleError);
+            }
             fats.extend(to_u32(sectors.get(id, reader)?)?);
         }
 
@@ -96,18 +110,22 @@ impl Cfb {
         })
     }
 
-    fn get_stream<R: Read>(&mut self, name: &str, r: &mut R) -> Result<Vec<u8>> {
-        let d = self
+    /// The named stream, or `None` if no directory entry has that name.
+    fn get_stream<R: Read>(&mut self, name: &str, r: &mut R) -> Result<Option<Vec<u8>>> {
+        let Some(d) = self
             .directories
             .iter()
             .find(|d| d.name.as_bytes().eq_ignore_ascii_case(name.as_bytes()))
-            .ok_or(OleError)?;
-        if d.len < 4096 {
+        else {
+            return Ok(None);
+        };
+        let stream = if d.len < 4096 {
             self.mini_sectors
-                .get_chain(d.start, &self.mini_fats, r, d.len)
+                .get_chain(d.start, &self.mini_fats, r, d.len)?
         } else {
-            self.sectors.get_chain(d.start, &self.fats, r, d.len)
-        }
+            self.sectors.get_chain(d.start, &self.fats, r, d.len)?
+        };
+        Ok(Some(stream))
     }
 }
 
