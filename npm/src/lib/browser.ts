@@ -4,6 +4,9 @@
  *
  * Load it lazily where it is needed, e.g. `await import('excel-rs/browser')`.
  * The WebAssembly file (~0.7 MB gzip) is fetched on the first call or by `initExcel()`.
+ *
+ * @deprecated Since 0.2.0. Read files on the server with the Node.js entry and
+ * check them before the upload with `excel-rs/detect`. Removed in a later major version.
  */
 import init, * as bindings from '../../wasm/web/excel_rs_wasm.js';
 import { ExcelError, readSheetWith, writeXlsxWith } from './common.js';
@@ -29,6 +32,8 @@ let readySource: WasmSource | undefined;
  * call does it too. Call it early with your own URL when the bundler does not
  * copy the `.wasm` file (see README). Rejects with `WASM_LOAD_FAILED` when the
  * file cannot be fetched or compiled; a later call retries.
+ * @deprecated Since 0.2.0. Read files on the server with the Node.js entry and
+ * check them before the upload with `excel-rs/detect`. Removed in a later major version.
  */
 export function initExcel(source?: WasmSource): Promise<void> {
   if (ready && source !== undefined && source !== readySource) {
@@ -59,12 +64,18 @@ async function load(): Promise<WasmApi> {
 /**
  * Reads one sheet of a spreadsheet file.
  * Formula cells yield their last calculated value; csv cells are always strings.
+ * @deprecated Since 0.2.0. Read files on the server with the Node.js entry and
+ * check them before the upload with `excel-rs/detect`. Removed in a later major version.
  */
 export async function readSheet(input: Uint8Array | ArrayBuffer, options: ReadOptions = {}): Promise<SheetResult> {
   return readSheetWith(await load(), input, options);
 }
 
-/** Writes an xlsx workbook. Strings are written as text (never as formulas). */
+/**
+ * Writes an xlsx workbook. Strings are written as text (never as formulas).
+ * @deprecated Since 0.2.0. Read files on the server with the Node.js entry and
+ * check them before the upload with `excel-rs/detect`. Removed in a later major version.
+ */
 export async function writeXlsx(sheets: SheetSpec[]): Promise<Uint8Array> {
   return writeXlsxWith(await load(), sheets);
 }
