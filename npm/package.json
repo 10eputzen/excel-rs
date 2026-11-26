@@ -1,7 +1,7 @@
 {
   "name": "excel-rs",
   "version": "0.1.0",
-  "description": "Fast spreadsheet import/export for Node.js: read xlsx, xls, xlsb, ods and csv, write xlsx. Rust core compiled to WebAssembly, zero runtime dependencies.",
+  "description": "Fast spreadsheet import/export for Node.js and browsers: read xlsx, xls, xlsb, ods and csv, write xlsx. Rust core compiled to WebAssembly, zero runtime dependencies.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -19,22 +19,32 @@
     "import",
     "export",
     "wasm",
-    "rust"
+    "rust",
+    "browser"
   ],
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/node/index.js",
+  "types": "dist/node/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/node/index.d.ts",
+      "default": "./dist/node/index.js"
     },
+    "./browser": {
+      "types": "./dist/browser/browser.d.ts",
+      "default": "./dist/browser/browser.js"
+    },
+    "./wasm": "./wasm/web/excel_rs_wasm_bg.wasm",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
-    "wasm/excel_rs_wasm.js",
-    "wasm/excel_rs_wasm_bg.wasm",
-    "wasm/excel_rs_wasm.d.ts",
+    "wasm/node/excel_rs_wasm.js",
+    "wasm/node/excel_rs_wasm.d.ts",
+    "wasm/node/excel_rs_wasm_bg.wasm",
+    "wasm/web/excel_rs_wasm.js",
+    "wasm/web/excel_rs_wasm.d.ts",
+    "wasm/web/excel_rs_wasm_bg.wasm",
+    "wasm/web/package.json",
     "README.md"
   ],
   "engines": {
@@ -43,15 +53,17 @@
   "sideEffects": false,
   "scripts": {
     "build:wasm": "node scripts/build-wasm.mjs",
-    "build:ts": "tsc -p tsconfig.json",
+    "build:ts": "node scripts/build-ts.mjs",
     "build": "npm run build:wasm && npm run build:ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test test/read.test.mjs test/write.test.mjs test/robustness.test.mjs test/performance.test.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.browser.json --noEmit",
+    "test": "node --test test/read.test.mjs test/write.test.mjs test/robustness.test.mjs test/performance.test.mjs test/browser-entry.test.mjs",
     "prepack": "node -e \"require('fs').copyFileSync('../README.md','README.md')\"",
-    "fixtures": "node scripts/make-fixtures.mjs"
+    "fixtures": "node scripts/make-fixtures.mjs",
+    "test:browser": "node --test test/browser.e2e.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "playwright": "1.63.0",
     "typescript": "^5.6.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }

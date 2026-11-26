@@ -1,6 +1,6 @@
 /**
- * excel-rs: read xlsx, xls, xlsb, ods and csv; write xlsx.
- * The parsing and writing runs in a Rust core compiled to WebAssembly.
+ * Shared by the Node.js and the browser entry: public types, errors, option
+ * validation and the conversion of values across the WebAssembly boundary.
  */
 
 /** A cell value. Dates are `Date` objects in UTC (Excel has no time zones). */
@@ -78,49 +78,40 @@ export class ExcelError extends Error {
   }
 }
 
-interface WasmApi {
+/** The functions exported by the generated WebAssembly bindings. */
+export interface WasmApi {
   readSheet(bytes: Uint8Array, opts: string): string;
   writeXlsx(sheets: string): Uint8Array;
   memoryBytes(): number;
+  __wbg_reset_state(): void;
 }
 
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
-/** WebAssembly memory never shrinks; above this size the instance is dropped after a call. */
+/** WebAssembly memory never shrinks; above this size the instance is recreated after a call. */
 const MEMORY_RESET_BYTES = 256 * 1024 * 1024;
 
-// `WebAssembly` types are not part of the Node-only lib; the class is looked up at runtime.
+// `WebAssembly` types are not part of every lib setting; the class is looked up at runtime.
 const RuntimeError = (globalThis as unknown as { WebAssembly: { RuntimeError: unknown } }).WebAssembly
   .RuntimeError;
-const WASM_PATH = require.resolve('../wasm/excel_rs_wasm.js');
-let wasm: WasmApi | undefined;
-
-function load(): WasmApi {
-  if (!wasm) wasm = require(WASM_PATH) as WasmApi;
-  return wasm;
-}
-
-function unload(): void {
-  delete require.cache[WASM_PATH];
-  wasm = undefined;
-}
 
 /**
- * Runs a WASM call. A trap leaves the instance unusable, and a large call leaves
- * its memory allocated; in both cases a fresh instance is loaded on the next call.
+ * Runs a WebAssembly call. A trap (parser crash or memory cap) leaves the
+ * instance unusable, and a large call leaves its memory allocated; in both
+ * cases the instance is recreated.
  */
-function call<T>(fn: (api: WasmApi) => T, onTrap: ErrorCode): T {
-  const api = load();
+function call<T>(api: WasmApi, fn: () => T, onTrap: ErrorCode): T {
+  let trapped = false;
   try {
-    return fn(api);
+    return fn();
   } catch (err) {
     if (typeof err === 'string') throw toExcelError(err);
     if (err instanceof Error && err.constructor === RuntimeError) {
-      unload();
+      trapped = true;
       throw new ExcelError(onTrap, `internal error: ${err.message}`);
     }
     throw err;
   } finally {
-    if (wasm === api && api.memoryBytes() > MEMORY_RESET_BYTES) unload();
+    if (trapped || api.memoryBytes() > MEMORY_RESET_BYTES) api.__wbg_reset_state();
   }
 }
 
@@ -139,29 +130,6 @@ function toBytes(input: Uint8Array | ArrayBuffer): Uint8Array {
   throw new ExcelError('INVALID_INPUT', 'input must be a Uint8Array, Buffer or ArrayBuffer');
 }
 
-/**
- * Reads one sheet of a spreadsheet file.
- * Formula cells yield their last calculated value; csv cells are always strings.
- */
-export function readSheet(input: Uint8Array | ArrayBuffer, options: ReadOptions = {}): SheetResult {
-  validateOptions(options);
-  const bytes = toBytes(input);
-  // Checked here too, so oversized input is not copied into WebAssembly memory.
-  const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
-  if (bytes.byteLength > maxBytes) {
-    throw new ExcelError('TOO_LARGE', `input exceeds ${maxBytes} bytes`);
-  }
-  const json = call((api) => api.readSheet(bytes, JSON.stringify(options)), 'CORRUPT_FILE');
-  const result = JSON.parse(json) as { sheetNames: string[]; sheet: string; rows: unknown[][] };
-  for (const row of result.rows) {
-    for (let i = 0; i < row.length; i++) {
-      const v = row[i];
-      if (v !== null && typeof v === 'object') row[i] = new Date((v as { d: number }).d);
-    }
-  }
-  return result as SheetResult;
-}
-
 function validateOptions(o: ReadOptions): void {
   if (o === null || typeof o !== 'object') throw new ExcelError('INVALID_INPUT', 'options must be an object');
   const isCount = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
@@ -175,14 +143,34 @@ function validateOptions(o: ReadOptions): void {
   }
 }
 
-/** Writes an xlsx workbook. Strings are written as text (never as formulas). */
-export function writeXlsx(sheets: SheetSpec[]): Uint8Array {
+/** `readSheet` on a loaded WebAssembly instance. */
+export function readSheetWith(api: WasmApi, input: Uint8Array | ArrayBuffer, options: ReadOptions): SheetResult {
+  validateOptions(options);
+  const bytes = toBytes(input);
+  // Checked here too, so oversized input is not copied into WebAssembly memory.
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+  if (bytes.byteLength > maxBytes) {
+    throw new ExcelError('TOO_LARGE', `input exceeds ${maxBytes} bytes`);
+  }
+  const json = call(api, () => api.readSheet(bytes, JSON.stringify(options)), 'CORRUPT_FILE');
+  const result = JSON.parse(json) as { sheetNames: string[]; sheet: string; rows: unknown[][] };
+  for (const row of result.rows) {
+    for (let i = 0; i < row.length; i++) {
+      const v = row[i];
+      if (v !== null && typeof v === 'object') row[i] = new Date((v as { d: number }).d);
+    }
+  }
+  return result as SheetResult;
+}
+
+/** `writeXlsx` on a loaded WebAssembly instance. */
+export function writeXlsxWith(api: WasmApi, sheets: SheetSpec[]): Uint8Array {
   if (!Array.isArray(sheets)) throw new ExcelError('INVALID_INPUT', 'expected an array of sheets');
   const payload = sheets.map((s) => ({
     ...s,
-    rows: Array.isArray(s.rows) ? s.rows.map((row) => (Array.isArray(row) ? row.map(encodeCell) : row)) : s.rows,
+    rows: Array.isArray(s?.rows) ? s.rows.map((row) => (Array.isArray(row) ? row.map(encodeCell) : row)) : s?.rows,
   }));
-  return call((api) => api.writeXlsx(JSON.stringify(payload)), 'INVALID_INPUT');
+  return call(api, () => api.writeXlsx(JSON.stringify(payload)), 'INVALID_INPUT');
 }
 
 function encodeCell(v: unknown): unknown {

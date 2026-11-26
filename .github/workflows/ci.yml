@@ -71,6 +71,12 @@ jobs:
         run: npm run build
       - working-directory: npm
         run: npm test
+      - name: Browser test (Chromium)
+        if: matrix.node == 22
+        working-directory: npm
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:browser
       - name: Check package contents
         working-directory: npm
         run: npm pack --dry-run

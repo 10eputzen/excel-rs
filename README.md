@@ -1,6 +1,6 @@
 # excel-rs
 
-Fast spreadsheet import and export for Node.js.
+Fast spreadsheet import and export for Node.js and browsers.
 
 - **Read** xlsx, xlsm, xls, xlsb, ods and csv
 - **Write** xlsx with a bold, frozen, filterable header row and column formats
@@ -12,7 +12,12 @@ Fast spreadsheet import and export for Node.js.
 npm install excel-rs
 ```
 
-Requires Node.js 20 or newer. Works in serverless environments that run Node.js.
+Requires Node.js 20 or newer, or a browser with WebAssembly and ES modules. Works in serverless environments that run Node.js.
+
+| Entry | Use | API |
+|---|---|---|
+| `excel-rs` | Node.js (CommonJS and ESM) | synchronous |
+| `excel-rs/browser` | browsers, bundlers, Deno, workers | `async`, loads the `.wasm` on first use |
 
 ## Reading
 
@@ -89,9 +94,33 @@ writeFileSync('orders.xlsx', bytes);
 - Column widths fit the content (up to 80 characters) unless `width` is set.
 - `freezeHeader` and `autoFilter` default to `true`. With an empty `columns` array no header row is written.
 
+## Browser
+
+```ts
+// Load lazily, only where import or export is used:
+const { readSheet, writeXlsx } = await import('excel-rs/browser');
+
+const file = input.files[0];
+const { rows } = await readSheet(new Uint8Array(await file.arrayBuffer()));
+
+const bytes = await writeXlsx([{ name: 'Export', columns: [{ header: 'Name' }], rows: [['ACME']] }]);
+const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+```
+
+Same options, results and errors as in Node.js, but every function returns a promise. The WebAssembly binary (about 0.8 MB gzip) is fetched on the first call.
+
+**Where the `.wasm` comes from.** By default it is loaded from `excel_rs_wasm_bg.wasm` next to the bindings (`new URL(…, import.meta.url)`), which Vite and webpack 5 bundle as an asset automatically. If your bundler does not (e.g. esbuild-based builds), copy `node_modules/excel-rs/wasm/web/excel_rs_wasm_bg.wasm` into your static assets and point to it once before the first call:
+
+```ts
+import { initExcel } from 'excel-rs/browser';
+await initExcel('/assets/excel_rs_wasm_bg.wasm'); // URL, Response, bytes or WebAssembly.Module
+```
+
+**Content Security Policy.** Instantiating WebAssembly needs `'wasm-unsafe-eval'` in `script-src` (not `'unsafe-eval'`).
+
 ## Errors
 
-Both functions throw `ExcelError` with a `code`:
+Both functions throw `ExcelError` with a `code` (the browser entry rejects with it):
 
 | code | meaning |
 |---|---|
@@ -125,6 +154,7 @@ rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.130 --locked
 cargo test
 cd npm && npm ci && npm run build && npm test
+npm run test:browser   # Chromium via Playwright
 ```
 
 `npm run fixtures` regenerates the reference files in `fixtures/` (needs LibreOffice).
