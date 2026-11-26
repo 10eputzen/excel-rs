@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes the version in npm/package.json from main to npm with provenance
+# Publishes the version in npm/package.json from main to npm (@10eputzen/excel-rs) with provenance
 # and creates the GitHub release with tag v<version>. Start it by hand
 # (workflow_dispatch) after the version bump is merged. The first publish uses
 # the NPM_TOKEN secret of environment `npm`; once trusted publishing is set up
@@ -62,7 +62,7 @@ jobs:
           registry-url: https://registry.npmjs.org
       - name: npm with trusted publishing
         run: npm install -g npm@11.6.2
-      - run: npm publish ./excel-rs-*.tgz --provenance --access public
+      - run: npm publish ./*excel-rs-*.tgz --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: GitHub release

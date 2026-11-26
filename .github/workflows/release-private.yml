@@ -1,8 +1,8 @@
 name: Private release
 
 # Publishes the version in npm/package.json from main to GitHub Packages as
-# @<owner>/excel-rs, for use before the public npm release. Consumers install
-# it under the public name: "excel-rs": "npm:@<owner>/excel-rs@<version>".
+# @<owner>/excel-rs, e.g. to test a version before the npm release. Consumers
+# map the scope in .npmrc: @<owner>:registry=https://npm.pkg.github.com
 on:
   workflow_dispatch:
 

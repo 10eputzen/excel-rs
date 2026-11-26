@@ -2,6 +2,7 @@
 
 ## 0.3.0 – 2026-11-26
 
+- First npm release, as `@10eputzen/excel-rs` (npm does not accept the unscoped name). Imports change from `excel-rs` to `@10eputzen/excel-rs`; the API is unchanged.
 - `readSheet(…, { schema })` returns `rowNumbers`: the Excel row number of each valid row, e.g. to point at duplicates.
 - csv: blank lines are kept as empty rows, so row numbers in errors and `rowNumbers` match what Excel shows (before, every blank line shifted the following rows up by one).
 - csv: a file whose first line has no delimiter is read as a single column. Before, a German one-column file with `-0,01` was split at the comma and read as `-0`.
