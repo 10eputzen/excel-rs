@@ -8,6 +8,10 @@
     "url": "git+https://github.com/10eputzen/excel-rs.git",
     "directory": "npm"
   },
+  "homepage": "https://github.com/10eputzen/excel-rs#readme",
+  "bugs": {
+    "url": "https://github.com/10eputzen/excel-rs/issues"
+  },
   "keywords": [
     "excel",
     "xlsx",
@@ -20,7 +24,9 @@
     "export",
     "wasm",
     "rust",
-    "browser"
+    "xlsx-reader",
+    "xlsx-writer",
+    "nodejs"
   ],
   "main": "dist/node/index.js",
   "types": "dist/node/index.d.ts",

@@ -262,6 +262,10 @@ cargo +nightly fuzz run read                                 # fuzzing, see fuzz
 cd npm/bench && npm install && npm run bench                 # benchmarks, updates the README table
 ```
 
+## Contributing
+
+Issues and pull requests are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md). Please report security problems privately, see [SECURITY.md](SECURITY.md).
+
 ## Built on
 
 [calamine](https://github.com/tafia/calamine), [rust_xlsxwriter](https://github.com/jmcnamara/rust_xlsxwriter), [csv](https://github.com/BurntSushi/rust-csv) and [encoding_rs](https://github.com/hsivonen/encoding_rs).
