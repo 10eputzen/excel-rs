@@ -1,6 +1,6 @@
 # excel-rs
 
-Fast, strict spreadsheet import and export for Node.js. Reads xlsx, xlsm, xls, xlsb, ods and csv, validates rows against a schema with German error messages, and writes xlsx. A Rust core compiled to WebAssembly: one package that runs wherever Node.js runs (tested on Linux and Windows), no native binaries, no postinstall, no runtime dependencies.
+Fast, strict spreadsheet import and export for Node.js. Reads xlsx, xlsm, xls, xlsb, ods and csv, validates rows against a schema with messages for end users, and writes xlsx. A Rust core compiled to WebAssembly: one package that runs wherever Node.js runs (tested on Linux and Windows), no native binaries, no postinstall, no runtime dependencies.
 
 ```sh
 npm install excel-rs
@@ -23,7 +23,6 @@ const { rows, errors } = readSheet(bytes, {
 ## Why excel-rs
 
 - **Fast.** Reads xlsx 4–6× faster than SheetJS and exceljs, csv more than 10× faster, and writes xlsx faster too, see [Benchmarks](#benchmarks).
-- **Made for German files.** `;` csv in Windows-1252 from Excel, `1.234,56`, `31.12.2025`, `ja`/`nein`, umlauts everywhere, error messages for end users in German.
 - **Safe for uploads from strangers.** Limits for size, rows and cells are checked before memory is allocated; zip bombs, cyclic OLE files and parser crashes end in a typed `ExcelError`, never in a crashed process. Fuzzed weekly.
 - **Exact row numbers.** Errors and valid rows carry the row number Excel shows, also for csv files with blank lines.
 - **Small surface.** Two functions, `readSheet` and `writeXlsx`, plus a 2 KB browser check before the upload.
