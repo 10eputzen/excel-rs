@@ -2,7 +2,7 @@
   "name": "excel-rs",
   "version": "0.3.0",
   "description": "Fast spreadsheet import/export for Node.js: read xlsx, xls, xlsb, ods and csv with schema validation, write xlsx. Rust core compiled to WebAssembly, zero runtime dependencies.",
-  "license": "MIT",
+  "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/10eputzen/excel-rs.git",

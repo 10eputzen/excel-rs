@@ -24,4 +24,4 @@ CI runs the same checks on Linux and Windows for every pull request.
 - Bug fixes come with a test that fails without the fix.
 - Test fixtures must not contain personal or confidential data.
 
-By contributing you agree that your contribution is licensed under the [MIT license](LICENSE), without any additional terms, and that you follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+By contributing you agree that your contribution is dual licensed under the [MIT license](LICENSE-MIT) and the [Apache License 2.0](LICENSE-APACHE), without any additional terms, and that you follow the [Code of Conduct](CODE_OF_CONDUCT.md).
