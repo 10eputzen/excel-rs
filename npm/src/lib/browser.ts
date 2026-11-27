@@ -13,7 +13,7 @@ import { ExcelError, readSheetWith, writeXlsxWith } from './common.js';
 import type { ReadOptions, SheetResult, SheetSpec, WasmApi } from './common.js';
 
 export { ExcelError } from './common.js';
-export type { Cell, ColumnSpec, ErrorCode, InputFormat, ReadOptions, SheetResult, SheetSpec } from './common.js';
+export type { Cell, CellStyle, ColumnSpec, ErrorCode, InputFormat, ReadOptions, SheetResult, SheetSpec, TitleRow } from './common.js';
 
 /**
  * Where to load the WebAssembly binary from: a URL (string, `URL`, `Request`),

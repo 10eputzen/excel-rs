@@ -57,6 +57,26 @@ export interface ColumnSpec {
   format?: 'text' | 'date' | 'datetime' | (string & {});
 }
 
+/** Cell formatting. Colors are `#RRGGBB`. */
+export interface CellStyle {
+  bold?: boolean;
+  /** Font size in points (1–409). */
+  fontSize?: number;
+  fontColor?: string;
+  /** Background color (solid fill). */
+  fill?: string;
+  align?: 'left' | 'center' | 'right';
+}
+
+/** A row above the header, e.g. a title. */
+export interface TitleRow {
+  /** Written to column A. */
+  value: Cell;
+  style?: CellStyle;
+  /** Number of columns the cell spans, starting at column A, including A: `4` merges A:D. Default 1 (no merge). */
+  mergeAcross?: number;
+}
+
 export interface SheetSpec {
   name: string;
   /** Header row. Leave empty to write `rows` without a header. */
@@ -66,6 +86,16 @@ export interface SheetSpec {
   freezeHeader?: boolean;
   /** Add an auto filter to the header row. Default true. */
   autoFilter?: boolean;
+  /** Protect the sheet without a password; cells can only be selected. Default false. */
+  protect?: boolean;
+  /** Style of the header row. Replaces the default (bold), so set `bold` again if wanted. */
+  headerStyle?: CellStyle;
+  /** Rows above the header row, in order. The header row follows them. */
+  titleRows?: TitleRow[];
+  /** Style per data row (index = row in `rows`); `null`/`undefined` = none. Also colors empty cells of the row up to the last column. */
+  rowStyles?: (CellStyle | null | undefined)[];
+  /** Style per cell, `cellStyles[row][column]`. Properties set here win over `rowStyles`. */
+  cellStyles?: ((CellStyle | null | undefined)[] | null | undefined)[];
 }
 
 /** Error thrown by `readSheet` and `writeXlsx`. */
@@ -185,6 +215,9 @@ export function writeXlsxWith(api: WasmApi, sheets: SheetSpec[]): Uint8Array {
   if (!Array.isArray(sheets)) throw new ExcelError('INVALID_INPUT', 'expected an array of sheets');
   const payload = sheets.map((s) => ({
     ...s,
+    titleRows: Array.isArray(s?.titleRows)
+      ? s.titleRows.map((t) => (t && typeof t === 'object' ? { ...t, value: encodeCell(t.value) } : t))
+      : s?.titleRows,
     rows: Array.isArray(s?.rows) ? s.rows.map((row) => (Array.isArray(row) ? row.map(encodeCell) : row)) : s?.rows,
   }));
   return call(api, () => api.writeXlsx(JSON.stringify(payload)), 'INVALID_INPUT');
