@@ -8,7 +8,7 @@ import { applySchema, validateSchema } from './schema';
 import type { Schema, SchemaResult } from './schema';
 
 export { ExcelError } from './common';
-export type { Cell, ColumnSpec, ErrorCode, InputFormat, ReadOptions, SheetResult, SheetSpec } from './common';
+export type { Cell, CellStyle, ColumnSpec, ErrorCode, InputFormat, ReadOptions, SheetResult, SheetSpec, TitleRow } from './common';
 export type {
   AnyColumnRule,
   ColumnRule,

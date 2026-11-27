@@ -202,6 +202,32 @@ writeFileSync('orders.xlsx', bytes);
 - Column widths fit the content (up to 80 characters) unless `width` is set.
 - `freezeHeader` and `autoFilter` default to `true`. With an empty `columns` array no header row is written.
 
+### Styles, title rows and sheet protection
+
+```ts
+writeXlsx([
+  {
+    name: 'Overview',
+    protect: true, // sheet protection without a password; cells can only be selected
+    titleRows: [
+      { value: 'Overview', style: { bold: true, fontSize: 14 }, mergeAcross: 4 }, // merges A1:D1
+      { value: null }, // empty row
+    ],
+    columns: [{ header: 'School' }, { header: 'Children' }],
+    headerStyle: { bold: true, fontColor: '#FFFFFF', fill: '#1F4E78', align: 'center' },
+    rows: [['North', 12], ['South', 7], ['Total', 19]],
+    rowStyles: [undefined, undefined, { bold: true }],
+    cellStyles: [[undefined, { fill: '#FFC7CE' }]], // cellStyles[row][column]
+  },
+]);
+```
+
+- `CellStyle`: `bold`, `fontSize` (points), `fontColor`, `fill` (`#RRGGBB`), `align` (`left`, `center`, `right`). A style is added to the column format, so a date column keeps its date format.
+- `headerStyle` replaces the default header style (bold); set `bold` again if you want it.
+- `rowStyles[i]` styles data row `i`, including empty cells and the columns the row does not fill. `cellStyles[i][j]` overrides it property by property.
+- `titleRows` are written above the header row, in order, in column A. `mergeAcross: n` merges `n` columns starting at A (`4` = A:D). The header row, freeze and filter move down accordingly. Long titles do not widen column A.
+- `protect: true` locks the sheet without a password; users can select cells but not edit, format or filter.
+
 ## Browser (deprecated)
 
 `@10eputzen/excel-rs/browser` runs the full reader and writer in the browser. It is deprecated since 0.2.0 because it loads about 0.8 MB of WebAssembly (gzip): read files on the server and check them before the upload with [`@10eputzen/excel-rs/detect`](#checking-files-before-upload). It keeps working until a later major version removes it.

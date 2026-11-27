@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0 – 2026-11-27
+
+- `writeXlsx` formatting: `protect` (sheet protection without a password), `headerStyle`, `rowStyles` and `cellStyles` (bold, font size, font color, fill, alignment) and `titleRows` with `mergeAcross` for rows above the header, e.g. a merged title. The new `CellStyle` and `TitleRow` types are exported. Sheets without these options are written as before.
+
 ## 0.3.1 – 2026-11-26
 
 - Published through npm trusted publishing (no stored token); README badges. No code changes.
